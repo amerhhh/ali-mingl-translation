@@ -1,0 +1,150 @@
+1. Server-Side API Connection (Python)
+This is the code from routes.py that creates the ephemeral session token:
+
+# Get the API key from environment variables
+api_key = os.environ.get("OPENAI_API_KEY")
+# Set up comprehensive configuration for Arabic-to-English translation
+session_config = {
+    # Model selection
+    "model": "gpt-4o-realtime-preview-2024-12-17",
+    
+    # Voice selection
+    "voice": "verse",
+    
+    # Audio processing settings
+    "input_audio_format": "pcm16",
+    "output_audio_format": "pcm16",
+    "input_audio_noise_reduction": {
+        "type": "far_field"
+    },
+    
+    # Enhanced turn detection for better conversation flow
+    "turn_detection": {
+        "type": "server_vad",
+        "threshold": 0.5,
+        "silence_duration_ms": 200,
+        "prefix_padding_ms": 300,
+        "create_response": True,
+        "interrupt_response": True
+    },
+    
+    # Generation parameters
+    "temperature": 0.7,
+    "max_response_output_tokens": "inf",
+    
+    # Modalities
+    "modalities": ["text", "audio"],
+    
+    # Translation instructions
+    "instructions": "You are a real-time Arabic-to-English translator. Listen to the Arabic audio and provide both the original Arabic text and the English translation. Be accurate and concise in your translations. Always format your response so that the Arabic text appears first, followed by the English translation on a new line."
+}
+# Request the ephemeral key from OpenAI with Arabic-to-English translation config
+response = requests.post(
+    "https://api.openai.com/v1/realtime/sessions",
+    headers={
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    },
+    json=session_config
+)
+# Check if the request was successful
+if response.status_code == 200:
+    # Return the response data with the ephemeral key
+    response_data = response.json()
+    return response_data  # This contains client_secret.value that you need
+2. Client-Side WebRTC Connection (JavaScript)
+Here's the core WebRTC connection code from static/js/webrtc.js:
+
+// Get an ephemeral key from our server
+const tokenResponse = await fetch('/session');
+const data = await tokenResponse.json();
+if (!data.client_secret || !data.client_secret.value) {
+    throw new Error('Invalid session token received');
+}
+const EPHEMERAL_KEY = data.client_secret.value;
+// Create a peer connection
+const peerConnection = new RTCPeerConnection();
+// Set up to play remote audio from the model
+const remoteAudioElement = document.createElement('audio');
+remoteAudioElement.autoplay = true;
+// Add audio track handler
+peerConnection.ontrack = (e) => {
+    remoteAudioElement.srcObject = e.streams[0];
+};
+// Add local audio track for microphone input
+const localStream = await navigator.mediaDevices.getUserMedia({
+    audio: true
+});
+// Add track to peer connection
+localStream.getTracks().forEach(track => {
+    peerConnection.addTrack(track, localStream);
+});
+// Set up data channel for sending and receiving events
+const dataChannel = peerConnection.createDataChannel('oai-events');
+// Setup data channel event handlers
+dataChannel.onmessage = (event) => {
+    try {
+        // Try to parse as JSON
+        const data = JSON.parse(event.data);
+        
+        // Handle specific session events
+        if (data.type === 'caption') {
+            // Handle transcription/translation
+            let sourceText = '';
+            let translatedText = '';
+            
+            if (data.transcription && data.transcription.text) {
+                sourceText = data.transcription.text;
+            }
+            
+            if (data.translation && data.translation.text) {
+                translatedText = data.translation.text;
+            }
+            
+            // Use the translation data
+            console.log("Arabic:", sourceText);
+            console.log("English:", translatedText);
+        }
+    } catch (e) {
+        // If not JSON, handle as plain text
+        console.log("Received text:", event.data);
+    }
+};
+// Start the session using SDP
+const offer = await peerConnection.createOffer();
+await peerConnection.setLocalDescription(offer);
+// Send SDP offer to OpenAI
+const baseUrl = 'https://api.openai.com/v1/realtime';
+const model = 'gpt-4o-realtime-preview-2024-12-17';
+const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+    method: 'POST',
+    body: offer.sdp,
+    headers: {
+        'Authorization': `Bearer ${EPHEMERAL_KEY}`,
+        'Content-Type': 'application/sdp'
+    },
+});
+const answerSdp = await sdpResponse.text();
+const answer = {
+    type: 'answer',
+    sdp: answerSdp,
+};
+await peerConnection.setRemoteDescription(answer);
+Important Notes for Implementation:
+API Key Security: Always keep your OpenAI API key on the server side. Only pass ephemeral tokens to the client.
+
+Noise Reduction Format: Make sure to use the correct format for noise reduction - it needs to be an object with a "type" property, not a string:
+
+"input_audio_noise_reduction": {
+    "type": "far_field"  // Use underscore, not hyphen
+}
+Error Handling: Implement comprehensive error handling as connection issues can occur with WebRTC:
+
+try {
+    // Connection code
+} catch (error) {
+    console.error('Connection error:', error);
+    // Handle error appropriately
+}
+Model Version: The latest model is "gpt-4o-realtime-preview-2024-12-17" - ensure you're using the current version in your implementation.
+

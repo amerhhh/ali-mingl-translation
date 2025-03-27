@@ -1,0 +1,58 @@
+Here's an example of how to add an emoji to the left of the message bubble:
+
+Find the Card component where you want to add the emoji (e.g., for each message in the history or the current translation).
+
+Insert the emoji inside the flex layout as a span or another element.
+
+For example, let's add a simple emoji before the source and target text:
+
+jsx
+Copy
+<Card key={message.id} className="p-4 transition-colors hover:bg-muted/50">
+  <div className="flex flex-col gap-2">
+    <div className="flex justify-between items-center">
+      {/* Emoji before the source language */}
+      <span role="img" aria-label="emoji" className="text-xl mr-2">
+        🌍
+      </span>
+      <p className="text-sm font-medium text-muted-foreground">{supportedLanguages[message.sourceLang]}</p>
+      <p className="text-xs text-muted-foreground">
+        {format(message.timestamp, 'MMM d, yyyy h:mm a')}
+      </p>
+    </div>
+    <p className="text-foreground">{message.sourceText}</p>
+
+    <div className="h-px bg-border my-2" />
+
+    <div className="flex items-center justify-between mt-2">
+      <p className="text-sm font-medium text-muted-foreground">
+        {supportedLanguages[message.targetLang]}
+      </p>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onPlayTranslation(message.targetText, message.targetLang)}
+        className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors"
+        disabled={isSpeaking}
+      >
+        {isSpeaking ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Volume2 className="h-4 w-4" />
+        )}
+        {isSpeaking ? uiText.playing : uiText.playAudio}
+      </Button>
+    </div>
+    {/* Emoji before the target text */}
+    <span role="img" aria-label="emoji" className="text-xl mr-2">
+      💬
+    </span>
+    <p className="text-foreground">{message.targetText}</p>
+  </div>
+</Card>
+Explanation:
+I added a span containing the emoji (🌍 and 💬) before the p tags that display the source and target text.
+
+The mr-2 class adds some margin to the right of the emoji to separate it from the text.
+
+The role="img" and aria-label="emoji" attributes make the emoji accessible.

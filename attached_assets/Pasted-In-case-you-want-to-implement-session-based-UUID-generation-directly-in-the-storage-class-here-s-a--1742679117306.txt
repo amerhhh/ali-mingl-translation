@@ -1,0 +1,52 @@
+In case you want to implement session-based UUID generation directly in the storage class, here’s a refined version of your addTranslation method:
+
+typescript
+Copy
+async addTranslation(translation: InsertTranslation): Promise<Translation> {
+  try {
+    // Ensure required fields are present with default values if needed
+    // Get or generate UUID for the session
+    const sessionUUID = sessionStorage.getItem('temp_user_uuid');
+    const tempUserUUID = sessionUUID || crypto.randomUUID();
+
+    if (!sessionUUID) {
+      sessionStorage.setItem('temp_user_uuid', tempUserUUID); // Store the UUID in sessionStorage for this session
+    }
+
+    const dataToInsert = {
+      ...translation,
+      sourceLang: translation.sourceLang || "en", // Default to 'en' if not provided
+      temp_user_uuid: tempUserUUID, // Use session UUID
+      user_emoji: translation.user_emoji, // Ensure user_emoji is included
+    };
+
+    console.log('Adding translation with UUID:', dataToInsert.temp_user_uuid);
+
+    const [result] = await db.insert(translations).values(dataToInsert).returning();
+    console.log("Successfully saved translation to database with room ID:", translation.roomId);
+    return result;
+  } catch (error) {
+    console.warn("Database error:", error instanceof Error ? error.message : String(error));
+    console.warn("Falling back to memory storage");
+
+    // Fallback to memory storage if database fails
+    const newTranslation = {
+      ...translation,
+      id: Date.now(),
+      timestamp: new Date(),
+      sourceLang: translation.sourceLang || "en",
+      temp_user_uuid: tempUserUUID, // Use session UUID
+      user_emoji: translation.user_emoji || "😊", // Default emoji if missing
+    };
+    this.memoryStore.push(newTranslation);
+    return newTranslation;
+  }
+}
+Recap:
+UUID Generation: The UUID is generated once per page load and stored in sessionStorage, ensuring it's consistent throughout the session.
+
+Emoji: The user_emoji is passed through and stored alongside each message, so the same emoji will be used for all messages in that session.
+
+Database and Memory Store: The logic for saving to the database and falling back to memory storage remains the same, but now with a consistent UUID per session.
+
+Let me know if this resolves your issue or if there are other parts of the code you would like to refine!

@@ -1,0 +1,132 @@
+Prompt for Replit:
+Objective: Add a feature to the chat application that generates a unique user ID (UUID) on each page load, associates this with a randomly selected emoji, and displays the emoji next to the user ID. Allow the user to change their emoji, and display the appropriate emoji next to their chat messages to indicate who sent the message.
+Requirements:
+Generate a Unique User ID (UUID):
+
+
+On each page load, generate a unique temp_user_uuid using a UUID generator.
+
+
+Store this UUID in the database as a new field for each user, specifically named temp_user_uuid.
+
+
+Random Emoji Assignment:
+
+
+Upon generating the UUID, randomly assign an emoji from a predefined list of available emojis (e.g., 😀, 😎, 😇, 🦄, etc.).
+
+
+Display the emoji next to the “Use:r” label on the webpage.
+
+
+Allow Emoji Customization:
+
+
+Provide the user with a dropdown or button to select a new emoji from a predefined list of emojis.
+
+
+When the user selects a new emoji, update the emoji displayed next to their user ID and store this emoji in the database as a field called user_emoji.
+
+
+Show Emoji with Chat Messages:
+
+
+In the message chat window, display the selected emoji next to the relevant chat message to indicate who sent the message.
+
+
+The chat messages should be linked to the temp_user_uuid so that each message is associated with the correct user and their emoji.
+
+
+Database Schema Changes:
+
+
+Create a new table or modify an existing user table to include:
+
+
+temp_user_uuid: A unique identifier (UUID) for each user session.
+
+
+user_emoji: The emoji selected by the user.
+
+
+Ensure that the database schema allows storing the temp_user_uuid and user_emoji for each user.
+
+
+Frontend Updates:
+
+
+Use React to update the frontend:
+
+
+Show the temp_user_uuid and the randomly selected emoji when the user first loads the page.
+
+
+Allow the user to select and change their emoji from a predefined list.
+
+
+Display the correct emoji next to each chat message based on the sender’s temp_user_uuid.
+
+
+WebSocket and Message Handling:
+
+
+When a user sends a message, ensure that the message payload includes their temp_user_uuid and user_emoji.
+
+
+Use WebSocket to broadcast the message to other users, ensuring the emoji appears next to the message in real-time for all connected users.
+
+
+Specific Implementation Tasks:
+UUID Generation:
+
+
+Use a UUID generation library (e.g., uuid in Node.js or a similar library) to create a unique temp_user_uuid when the page loads.
+
+
+Random Emoji Selection:
+
+
+Implement a function to randomly select an emoji from a predefined list and assign it to the user.
+
+
+Emoji Customization UI:
+
+
+Create a UI component (e.g., dropdown or emoji picker) that allows users to select their emoji from the list.
+
+
+Update the displayed emoji and store the selection in the database when changed.
+
+
+Database Integration:
+
+
+Store the temp_user_uuid and user_emoji in the database for each user session. Ensure this information is fetched when the user joins the chat and remains consistent across interactions.
+
+
+Display Emoji with Messages:
+
+
+When displaying chat messages, retrieve the user_emoji based on the temp_user_uuid and prepend the appropriate emoji to the user's message.
+
+
+WebSocket Messaging:
+
+
+Ensure that when messages are sent via WebSocket, the temp_user_uuid and user_emoji are included in the message payload.
+
+
+Update the frontend to show the emoji next to the message in the chat window, indicating the sender.
+
+
+Technical Considerations:
+Frontend: Use React and TypeScript for component handling and state management.
+
+
+Backend: Use Express.js with a PostgreSQL database to store user-specific data (temp_user_uuid, user_emoji).
+
+
+WebSocket: Use a WebSocket server to handle real-time message broadcasting, ensuring that the correct emoji is displayed next to each chat message.
+
+
+Emoji List: Predefine a list of standard emojis that users can choose from for customization. Optionally, integrate a third-party emoji picker library for better UX.

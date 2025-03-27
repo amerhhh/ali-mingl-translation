@@ -1,0 +1,79 @@
+To display the UUID in the chat box within your application, we need to modify the ChatMessage component to accept and display the UUID. Here's how I suggest implementing this:
+
+Steps to Add UUID to Chat Messages:
+Add UUID to the ChatMessageProps Interface: Modify the interface to include a uuid property, which will be passed to the component for each chat message.
+
+tsx
+Copy
+interface ChatMessageProps {
+  text: string;
+  translatedText: string;
+  isCurrentUser: boolean;
+  userEmoji: UserEmoji;
+  timestamp: string;
+  uuid: string; // Add the UUID prop
+}
+Update the ChatMessage Component: Use the uuid prop inside the component to display it within the message box. You can display it wherever it makes sense—either next to the timestamp, as an identifier for each message, or in a separate section.
+
+Here's an example of how you can modify the ChatMessage component to display the UUID:
+
+tsx
+Copy
+export function ChatMessage({
+  text,
+  translatedText,
+  isCurrentUser,
+  userEmoji,
+  timestamp,
+  uuid, // Destructure the uuid prop
+}: ChatMessageProps) {
+  return (
+    <div className={cn('message-container')}>
+      <Card className={cn(isCurrentUser ? 'current-user-card' : 'other-user-card')}>
+        <div className="message-header">
+          {/* Display UUID (You can format this to your needs) */}
+          <span className="message-uuid">UUID: {uuid}</span>
+          <span className="message-timestamp">{timestamp}</span>
+        </div>
+        <div className="message-content">
+          <p>{text}</p>
+          {translatedText && <p>{translatedText}</p>}
+        </div>
+        <Separator />
+      </Card>
+    </div>
+  );
+}
+Pass UUID to the ChatMessage Component: When rendering the ChatMessage component, ensure that you are passing the UUID along with other props. If the UUID is generated or received from the server, it needs to be included in the data sent to the component.
+
+Example:
+
+tsx
+Copy
+<ChatMessage
+  text="Hello!"
+  translatedText="Hola!"
+  isCurrentUser={true}
+  userEmoji={{/* emoji data */}}
+  timestamp="12:34 PM"
+  uuid="123e4567-e89b-12d3-a456-426614174000" // Example UUID
+/>
+Style the UUID (Optional): You can style the UUID text to make it look consistent with the rest of your chat box, using CSS or a utility class (if you're using a framework like Tailwind).
+
+For example:
+
+css
+Copy
+.message-uuid {
+  font-size: 0.8rem;
+  color: #777;
+  margin-right: 10px;
+}
+Ensure UUID is Available: If the UUID is generated dynamically (e.g., server-side), ensure that it's included in the message payload. If you're using WebSocket or another real-time communication method, the UUID should be part of the message object that gets passed to the ChatMessage component.
+
+Key Considerations:
+Where to Display the UUID: The UUID can be placed in a header area or even in a small tag at the bottom of the message, depending on your design.
+
+Data Flow: Make sure that the UUID is part of the message data being passed down to the ChatMessage component. If the UUID is missing, the text box won't show it.
+
+UUID Format: Ensure that the UUID format is consistent (e.g., 123e4567-e89b-12d3-a456-426614174000), and it’s passed correctly.

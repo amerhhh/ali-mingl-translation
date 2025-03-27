@@ -1,0 +1,106 @@
+To replicate the colors used in Apple iMessage for local and non-local messages, we can use the following color scheme:
+
+Apple iMessage Color Scheme:
+Local Messages (Sent by You):
+
+Background Color: #007AFF (a blue shade).
+
+Text Color: #ffffff (white text).
+
+Non-Local Messages (Received from Others):
+
+Background Color: #F0F0F5 (light gray).
+
+Text Color: #000000 (black text).
+
+Updating the Message Component:
+Make sure the colors change correctly by using the className with Tailwind CSS. I'll suggest a few improvements for better application of the colors.
+
+Here's how to implement the color scheme:
+
+tsx
+Copy
+const Message = ({ message, isCurrentUser }) => {
+  // Determine styles based on whether the message is from the current user or not
+  const messageStyle = isCurrentUser
+    ? "bg-[#007AFF] text-white" // Local message: blue background, white text
+    : "bg-[#F0F0F5] text-[#000000]"; // Non-local message: light gray background, black text
+
+  return (
+    <div className={`flex items-center space-x-2 p-4 rounded-lg ${messageStyle}`}>
+      <div className="message-content">
+        {/* Display the original source text */}
+        <p>{message.sourceText}</p>
+        {/* Display the translated text (if available) */}
+        {message.targetText && <p className="text-muted">{message.targetText}</p>}
+      </div>
+    </div>
+  );
+};
+
+// Example usage of Message component
+const message = {
+  id: 1,
+  sourceText: "قل هو الله احد الله الصمد لم يلد ولم يولد ولم يكن له كفوا احد",  // Original Arabic text
+  targetText: "Say: He is Allah, the One. Allah, the Eternal Refuge. He neither begets nor is born. Nor is there to Him any equivalent.",  // Translated English text
+  sourceLang: "ar",  // Source language (Arabic)
+  targetLang: "en",  // Target language (English)
+  isCurrentUser: true,  // Flag to identify if the message is from the current user
+};
+
+// Render the message with different colors based on whether it is from the current user or not
+<Message message={message} isCurrentUser={true} />
+Key Updates:
+Local Messages:
+
+Background Color: #007AFF (blue for sent messages, matching iMessage).
+
+Text Color: #ffffff (white text).
+
+Non-Local Messages:
+
+Background Color: #F0F0F5 (light gray for received messages).
+
+Text Color: #000000 (black text for better readability).
+
+className Adjustments:
+
+The Tailwind CSS classes are applied to control the background color (bg-[#007AFF] for local, bg-[#F0F0F5] for non-local) and the text color (text-white for local, text-[#000000] for non-local).
+
+Additional Considerations:
+Padding and Border Radius: I’ve used p-4 (padding) and rounded-lg (rounded corners). You can adjust these to suit your design.
+
+Font Style: You can also add additional Tailwind classes like font-bold or text-lg if you want to make the text bolder or larger.
+
+Why the Colors Didn't Change:
+If the colors didn't change, it could be due to a few reasons:
+
+CSS Overriding: Ensure that no other CSS (global styles or parent component styles) is overriding the colors. Make sure you're using Tailwind CSS correctly.
+
+Tailwind Build Process: Ensure that Tailwind CSS is configured and built correctly. Sometimes, the tailwind.config.js file might need to be set up to support custom colors if they aren't showing.
+
+Browser Cache: Clear the cache or try a hard refresh (Ctrl + Shift + R) to ensure the latest styles are applied.
+
+Example of Custom Colors in Tailwind (tailwind.config.js):
+If you’re using custom colors, ensure they're included in your tailwind.config.js file. Here's an example configuration:
+
+js
+Copy
+// tailwind.config.js
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        'sent-message': '#007AFF',
+        'received-message': '#F0F0F5',
+      },
+    },
+  },
+}
+After that, you can use them like this:
+
+tsx
+Copy
+const messageStyle = isCurrentUser
+  ? "bg-sent-message text-white"  // Use the custom color
+  : "bg-received-message text-black";  // Use the custom color
