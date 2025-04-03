@@ -45,16 +45,16 @@ export function useOpenAISpeechRecognition({
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [isConnecting, setIsConnecting] = useState(false);
-  
+
   // WebRTC connections
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const dataChannel = useRef<RTCDataChannel | null>(null);
   const localStream = useRef<MediaStream | null>(null);
   const remoteAudioElement = useRef<HTMLAudioElement | null>(null);
-  
+
   // Session token
   const sessionToken = useRef<string | null>(null);
-  
+
   // Create audio element on mount if it doesn't exist
   useEffect(() => {
     if (!remoteAudioElement.current) {
@@ -64,7 +64,7 @@ export function useOpenAISpeechRecognition({
       remoteAudioElement.current = audioEl;
       console.log('Created remote audio element for OpenAI audio');
     }
-    
+
     return () => {
       if (remoteAudioElement.current) {
         remoteAudioElement.current.srcObject = null;
@@ -137,7 +137,7 @@ export function useOpenAISpeechRecognition({
 
       sessionToken.current = response.client_secret.value;
       console.log('Received session token');
-      
+
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -157,29 +157,29 @@ export function useOpenAISpeechRecognition({
 
       // Create a peer connection
       peerConnection.current = new RTCPeerConnection();
-      
+
       // Add audio track handler
       peerConnection.current.ontrack = (e) => {
         if (remoteAudioElement.current) {
           // Check if we're on the Listen page and if we're in a language situation that requires filtering
           const isListenPage = window.location.pathname.includes('/listen');
-          
+
           // Check if we're translating from Arabic to English, being more permissive with how we detect Arabic
           // This will match 'ar', 'ar-SA', 'ar-EG', etc.
           const isArabicSource = language?.toLowerCase().startsWith('ar');
           const isEnglishTarget = targetLanguage?.toLowerCase().startsWith('en');
           const isArabicToEnglish = isArabicSource && isEnglishTarget;
-          
+
           console.log(`Language detection - Source: ${language} (isArabic: ${isArabicSource}), Target: ${targetLanguage} (isEnglish: ${isEnglishTarget})`);
-          
+
           // For the Listen page with Arabic as source, special handling to block Arabic audio
           if (isListenPage && isArabicToEnglish) {
             console.log('Listen page with Arabic source detected - not playing source audio from OpenAI');
-            
+
             // Instead of immediately setting the srcObject, we'll create a filtered MediaStream
             // that only includes audio if we know it's a translated output
             const originalStream = e.streams[0];
-            
+
             // Create a flag in window to track if we're expecting a translation response
             if (!(window as any).__openAIAudioState) {
               (window as any).__openAIAudioState = {
@@ -187,11 +187,11 @@ export function useOpenAISpeechRecognition({
                 lastTranslationTime: 0
               };
             }
-            
+
             // We'll modify the stream object but not assign it immediately
             // It will only be assigned when we know we have a translation
             (window as any).__openAIOriginalStream = originalStream;
-            
+
             // Don't immediately set the srcObject - wait for translation confirmation
             console.log('Audio playback pending translation confirmation');
           } else {
@@ -208,7 +208,7 @@ export function useOpenAISpeechRecognition({
       };
 
       localStream.current = await navigator.mediaDevices.getUserMedia(constraints);
-      
+
       // Add track to peer connection
       localStream.current.getTracks().forEach(track => {
         if (peerConnection.current) {
@@ -218,30 +218,55 @@ export function useOpenAISpeechRecognition({
 
       // Set up data channel for sending and receiving events
       dataChannel.current = peerConnection.current.createDataChannel('oai-events');
-      
+
       // Setup data channel event handlers
-      dataChannel.current.onmessage = (event) => {
+      dataChannel.current.onmessage = async (event) => {
         try {
           // Try to parse as JSON
           const data = JSON.parse(event.data);
-          
+
           // Handle specific session events
           if (data.type === 'caption') {
             // Handle transcription/translation
             let sourceText = '';
             let translatedText = '';
-            
+
             if (data.transcription && data.transcription.text) {
               sourceText = data.transcription.text;
             }
-            
+
             if (data.translation && data.translation.text) {
               translatedText = data.translation.text;
             }
-            
-            // Use the translation data
-            console.log(`Original (${language}):`, sourceText);
-            console.log(`Translation (${targetLanguage}):`, translatedText);
+
+            // Only process final transcriptions with content
+            if (sourceText && translatedText) {
+              try {
+                // Get the current room ID from the URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const roomId = urlParams.get('roomId');
+
+                if (roomId) {
+                  // Store in database through WebSocket
+                  const wsMessage = {
+                    type: 'chat',
+                    text: sourceText,
+                    translatedText: translatedText,
+                    sourceLang: language || 'en',
+                    targetLang: targetLanguage || 'en',
+                    temp_user_uuid: window.__temp_user_uuid, // Assuming this is set elsewhere
+                    user_emoji: window.__user_emoji // Assuming this is set elsewhere
+                  };
+
+                  // Find the WebSocket instance (it's typically stored in the window object)
+                  if (window.__chatWebSocket && window.__chatWebSocket.readyState === WebSocket.OPEN) {
+                    window.__chatWebSocket.send(JSON.stringify(wsMessage));
+                  }
+                }
+              } catch (error) {
+                console.error('Failed to store transcription:', error);
+              }
+            }
 
             // Update transcript result
             // For consistency with our app's behavior, we always update with the source text
@@ -263,21 +288,21 @@ export function useOpenAISpeechRecognition({
                 sourceLang: language,
                 targetLang: targetLanguage
               };
-              
+
               // If we're on the Listen page with Arabic->English, now we can allow audio playback
               // for the translated response (English only)
               const isListenPage = window.location.pathname.includes('/listen');
-              
+
               // Using the same approach as above for consistent detection
               const isArabicSource = language?.toLowerCase().startsWith('ar');
               const isEnglishTarget = targetLanguage?.toLowerCase().startsWith('en');
               const isArabicToEnglish = isArabicSource && isEnglishTarget;
-              
+
               console.log(`Translation detected - Allow playback? ${isListenPage && isArabicToEnglish && !!translatedText}`);
-              
+
               if (isListenPage && isArabicToEnglish && translatedText && remoteAudioElement.current) {
                 console.log('✓ Now allowing English translation audio on Listen page');
-                
+
                 // Get the original stream that was stored but not assigned
                 const originalStream = (window as any).__openAIOriginalStream;
                 if (originalStream) {
@@ -286,17 +311,17 @@ export function useOpenAISpeechRecognition({
                   console.log('Audio stream assigned for translation playback');
                 }
               }
-              
+
               onTranslation(sourceText, translatedText || '');
             }
           } else if (data.type === 'interim_caption') {
             // Handle interim results
             let sourceText = '';
-            
+
             if (data.transcription && data.transcription.text) {
               sourceText = data.transcription.text;
             }
-            
+
             // Update transcript result with interim text
             setTranscriptResult(prev => ({
               ...prev,
@@ -351,11 +376,11 @@ export function useOpenAISpeechRecognition({
       };
 
       await peerConnection.current.setRemoteDescription(answer);
-      
+
       setIsConnecting(false);
       setIsListening(true);
       console.log('WebRTC connection established');
-      
+
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -399,18 +424,18 @@ export function useOpenAISpeechRecognition({
   const startListening = useCallback(async () => {
     try {
       setError(null);
-      
+
       // Create a new session
       const sessionCreated = await createRealtimeSession();
       if (!sessionCreated) return;
-      
+
       // Initialize WebRTC connection
       const connectionInitialized = await initializeWebRTC();
       if (!connectionInitialized) return;
-      
+
       // Reset transcript
       setTranscriptResult({ finalText: "", interimText: "", isFinal: false });
-      
+
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Failed to start listening:', message);
