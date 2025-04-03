@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -92,8 +92,11 @@ const defaultUiText = {
 export default function ChatRoom() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Get room ID from URL parameters or query string
+  const params = useParams();
   const urlSearchParams = new URLSearchParams(window.location.search);
-  const currentRoomId = urlSearchParams.get('id') || '';
+  const roomIdFromQuery = urlSearchParams.get('id') || '';
+  const currentRoomId = params?.id || roomIdFromQuery || '';
   const [, setLocation] = useLocation();
 
   const getInitialLanguages = () => {
@@ -254,7 +257,7 @@ export default function ChatRoom() {
   const joinRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (joinRoomId.trim()) {
-      window.location.href = `/chat?id=${joinRoomId.trim()}`;
+      setLocation(`/chat/${joinRoomId.trim()}`);
     }
   };
 
@@ -355,9 +358,9 @@ export default function ChatRoom() {
         <div className="mb-6">
           <Tabs defaultValue="chat" className="w-full" onValueChange={value => {
             if (value === "listen") {
-              window.location.href = `/listen${currentRoomId ? `?id=${currentRoomId}` : ''}`;
+              setLocation(currentRoomId ? `/listen/${currentRoomId}` : '/listen');
             } else if (value === "help") {
-              window.location.href = `/help${currentRoomId ? `?id=${currentRoomId}` : ''}`;
+              setLocation('/help');
             }
           }}>
             <TabsList className="grid grid-cols-3 w-full">
@@ -420,7 +423,7 @@ export default function ChatRoom() {
                           method: 'POST'
                         });
                         const data = await response.json();
-                        window.location.href = `/chat?id=${data.roomId}`;
+                        setLocation(`/chat/${data.roomId}`);
                       } catch (error) {
                         console.error('Failed to create room:', error);
                         toast({
@@ -487,7 +490,7 @@ export default function ChatRoom() {
 
                   <div className="space-y-2">
                     <QRCode
-                      value={`${window.location.origin}/chat?id=${currentRoomId}`}
+                      value={`${window.location.origin}/chat/${currentRoomId}`}
                       title={translatedQRText}
                       className="w-[120px] h-[120px]"
                     />

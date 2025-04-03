@@ -13,7 +13,9 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/chat" component={ChatRoom} />
+      <Route path="/chat/:id" component={ChatRoom} />
       <Route path="/listen" component={Listen} />
+      <Route path="/listen/:id" component={Listen} />
       <Route path="/help" component={Help} />
       <Route component={NotFound} />
     </Switch>

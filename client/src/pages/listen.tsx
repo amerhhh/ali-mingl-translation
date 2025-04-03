@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -105,8 +105,11 @@ const defaultUiText = {
 export default function Listen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Get room ID from URL parameters or query string
+  const params = useParams();
   const urlSearchParams = new URLSearchParams(window.location.search);
-  const currentRoomId = urlSearchParams.get('id') || '';
+  const roomIdFromQuery = urlSearchParams.get('id') || '';
+  const currentRoomId = params?.id || roomIdFromQuery || '';
   const [, setLocation] = useLocation();
 
   const getInitialLanguages = () => {
@@ -344,7 +347,7 @@ export default function Listen() {
   const joinRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (joinRoomId.trim()) {
-      window.location.href = `/listen?id=${joinRoomId.trim()}`;
+      setLocation(`/listen/${joinRoomId.trim()}`);
     }
   };
 
@@ -451,15 +454,15 @@ export default function Listen() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#F2F0FF] to-[#EDEDED] p-4 md:p-6">
+    <div className="min-h-screen bg-gradient-to-b from-[#E6F7FF] to-[#D6EBFA] p-4 md:p-6">
       <div className="container mx-auto max-w-4xl">
         {/* Main Navigation Tabs */}
         <div className="mb-6">
           <Tabs defaultValue="listen" className="w-full" onValueChange={value => {
             if (value === "chat") {
-              window.location.href = `/chat${currentRoomId ? `?id=${currentRoomId}` : ''}`;
+              setLocation(currentRoomId ? `/chat/${currentRoomId}` : '/chat');
             } else if (value === "help") {
-              window.location.href = `/help${currentRoomId ? `?id=${currentRoomId}` : ''}`;
+              setLocation('/help');
             }
           }}>
             <TabsList className="grid grid-cols-3 w-full">
@@ -504,7 +507,7 @@ export default function Listen() {
             </div>
           )}
 
-          <Card className="p-3 md:p-4">
+          <Card className="p-3 md:p-4 bg-blue-50 border-blue-200 shadow-sm">
             <div className="space-y-3 md:space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 md:gap-4">
@@ -522,7 +525,7 @@ export default function Listen() {
                           method: 'POST'
                         });
                         const data = await response.json();
-                        window.location.href = `/listen?id=${data.roomId}`;
+                        setLocation(`/listen/${data.roomId}`);
                       } catch (error) {
                         console.error('Failed to create room:', error);
                         toast({
@@ -589,7 +592,7 @@ export default function Listen() {
 
                   <div className="space-y-2">
                     <QRCode
-                      value={`${window.location.origin}/listen?id=${currentRoomId}`}
+                      value={`${window.location.origin}/listen/${currentRoomId}`}
                       title={translatedQRText}
                       className="w-[120px] h-[120px]"
                     />
@@ -629,7 +632,7 @@ export default function Listen() {
             </TabsList>
 
             <TabsContent value="chat">
-              <Card className="p-4 shadow-lg bg-white">
+              <Card className="p-4 shadow-sm bg-blue-50 border-blue-200">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-4">
                     <h2 className="text-lg font-semibold">{uiText.translationSettings}</h2>
@@ -719,7 +722,7 @@ export default function Listen() {
                 />
 
                 {/* Listen page version of ChatMessages - showing only target language translations */}
-              <div className="space-y-4 rounded-lg bg-background/50 p-4 backdrop-blur-sm">
+              <div className="space-y-4 rounded-lg bg-blue-100/50 p-4 backdrop-blur-sm shadow-inner border border-blue-200">
                 <h2 className="text-xl font-semibold text-center">
                   {messages.length > 0 ? 'Translations' : uiText.startConversation}
                 </h2>
@@ -727,7 +730,7 @@ export default function Listen() {
                 {messages.length > 0 ? (
                   <div className="space-y-4 max-h-[400px] overflow-y-auto">
                     {messages.map((msg, index) => (
-                      <div key={index} className="flex flex-col p-3 rounded-lg bg-primary/10 relative">
+                      <div key={index} className="flex flex-col p-3 rounded-lg bg-blue-200 shadow-sm relative">
                         <div className="flex items-center space-x-2 mb-1">
                           <span className="text-lg">{msg.user_emoji || '🔊'}</span>
                           <span className="text-sm text-muted-foreground">
@@ -762,7 +765,7 @@ export default function Listen() {
                 
                 {/* Current translation in progress */}
                 {currentTranslation && (
-                  <div className="flex flex-col p-3 rounded-lg bg-primary/5 border border-primary/20">
+                  <div className="flex flex-col p-3 rounded-lg bg-blue-100 border border-blue-300 shadow-sm">
                     <div className="flex items-center space-x-2 mb-1">
                       <span className="text-lg">{userEmoji}</span>
                       <span className="text-sm text-muted-foreground">
