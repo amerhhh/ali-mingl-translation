@@ -23,6 +23,7 @@ interface Message {
   timestamp: string;
   temp_user_uuid: string;
   user_emoji: UserEmoji;
+  voiceType?: string;
 }
 
 interface ChatRoom {
@@ -197,7 +198,8 @@ export function useChatRoom(roomId: string): ChatRoom {
                 targetLang: message.targetLang,
                 timestamp: message.timestamp,
                 temp_user_uuid: message.temp_user_uuid || userId, // Use sender's UUID if not provided
-                user_emoji: message.user_emoji || userEmoji // Use sender's emoji if not provided
+                user_emoji: message.user_emoji || userEmoji, // Use sender's emoji if not provided
+                voiceType: message.voiceType || "female" // Use provided voice type or default to female
               };
               console.log('Adding new message to chat:', newMessage);
               setMessages(prev => {
@@ -269,7 +271,8 @@ export function useChatRoom(roomId: string): ChatRoom {
           targetLang,
           roomId,
           temp_user_uuid: userId,
-          user_emoji: userEmoji
+          user_emoji: userEmoji,
+          voiceType: "female" // Default to female voice
         };
         console.log('Sending message through WebSocket:', chatMessage);
         socket.send(JSON.stringify(chatMessage));

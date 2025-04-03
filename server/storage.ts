@@ -2,6 +2,7 @@ import { translations, type Translation, type InsertTranslation } from "@shared/
 import { db } from "./db";
 import { desc, eq } from "drizzle-orm";
 import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface IStorage {
   addTranslation(translation: InsertTranslation): Promise<Translation>;
@@ -40,8 +41,9 @@ export class DatabaseStorage implements IStorage {
       const dataToInsert = {
         ...translation,
         sourceLang: translation.sourceLang || "en",
-        temp_user_uuid: translation.temp_user_uuid,
-        user_emoji: translation.user_emoji
+        temp_user_uuid: translation.temp_user_uuid || uuidv4(),
+        user_emoji: translation.user_emoji || "🌟",
+        voiceType: translation.voiceType || "female"
       };
 
       if (!dataToInsert.temp_user_uuid) {
@@ -52,6 +54,10 @@ export class DatabaseStorage implements IStorage {
         temp_user_uuid: dataToInsert.temp_user_uuid,
         user_emoji: dataToInsert.user_emoji
       });
+
+      if (!db) {
+        throw new Error("Database not available");
+      }
 
       const [result] = await db.insert(translations).values(dataToInsert).returning();
       console.log("Translation saved to database:", {
@@ -69,9 +75,11 @@ export class DatabaseStorage implements IStorage {
         id: Date.now(),
         timestamp: new Date(),
         sourceLang: translation.sourceLang || "en",
-        temp_user_uuid: translation.temp_user_uuid,
-        user_emoji: translation.user_emoji
-      };
+        temp_user_uuid: translation.temp_user_uuid || uuidv4(),
+        user_emoji: translation.user_emoji || "🌟",
+        voiceType: translation.voiceType || "female"
+      } as Translation; // Type assertion to match Translation type
+      
       this.memoryStore.push(newTranslation);
       return newTranslation;
     }
@@ -79,6 +87,10 @@ export class DatabaseStorage implements IStorage {
 
   async getTranslations(): Promise<Translation[]> {
     try {
+      if (!db) {
+        throw new Error("Database not available");
+      }
+      
       return db
         .select()
         .from(translations)
@@ -91,6 +103,10 @@ export class DatabaseStorage implements IStorage {
 
   async clearRoomMessages(roomId: string): Promise<void> {
     try {
+      if (!db) {
+        throw new Error("Database not available");
+      }
+      
       await db.delete(translations)
         .where(eq(translations.roomId, roomId));
       console.log(`Deleted all messages for room: ${roomId}`);

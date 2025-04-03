@@ -27,7 +27,8 @@ export const translations = pgTable("translations", {
   roomId: text("room_id").notNull(),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
   temp_user_uuid: text("temp_user_uuid").notNull().default(uuidv4()),
-  user_emoji: text("user_emoji").notNull().default("🌟") // Default to first emoji
+  user_emoji: text("user_emoji").notNull().default("🌟"), // Default to first emoji
+  voiceType: text("voice_type").notNull().default("female") // Default voice type
 });
 
 export const insertTranslationSchema = createInsertSchema(translations).pick({
@@ -37,7 +38,8 @@ export const insertTranslationSchema = createInsertSchema(translations).pick({
   targetLang: true,
   roomId: true,
   temp_user_uuid: true,
-  user_emoji: true
+  user_emoji: true,
+  voiceType: true
 });
 
 export type InsertTranslation = z.infer<typeof insertTranslationSchema>;

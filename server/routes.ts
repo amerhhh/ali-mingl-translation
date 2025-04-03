@@ -143,7 +143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   message.targetLang
                 );
 
-                // Include temp_user_uuid and user_emoji in savedTranslation
+                // Include temp_user_uuid, user_emoji, and voiceType in savedTranslation
                 const savedTranslation = await storage.addTranslation({
                   sourceText: message.text,
                   targetText: translatedText,
@@ -151,7 +151,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   targetLang: message.targetLang,
                   roomId: currentRoom,
                   temp_user_uuid: message.temp_user_uuid, // Pass through the UUID
-                  user_emoji: message.user_emoji // Pass through the emoji
+                  user_emoji: message.user_emoji, // Pass through the emoji
+                  voiceType: message.voiceType || "female" // Use provided voiceType or default to female
                 });
 
                 const chatMessage = {
@@ -163,7 +164,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   timestamp: savedTranslation.timestamp.toISOString(),
                   roomId: currentRoom,
                   temp_user_uuid: savedTranslation.temp_user_uuid,
-                  user_emoji: savedTranslation.user_emoji
+                  user_emoji: savedTranslation.user_emoji,
+                  voiceType: savedTranslation.voiceType
                 };
 
                 broadcast(currentRoom, chatMessage);
@@ -252,7 +254,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         targetText,
         sourceLang: "en",
         targetLang,
-        roomId 
+        roomId,
+        voiceType: req.body.voiceType || "female"
       });
 
       console.log('Stored translation with room ID:', roomId);
