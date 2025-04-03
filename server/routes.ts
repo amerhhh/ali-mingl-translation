@@ -239,10 +239,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/translate", async (req, res) => {
     try {
       console.log('Translation request body:', req.body); 
+      
+      // Check if this is an OpenAI transcript (already translated)
+      if (req.body.translatedText && req.body.isOpenAI) {
+        console.log('Processing pre-translated OpenAI message');
+        
+        const sourceLang = req.body.sourceLang || "en";
+        const targetLang = req.body.targetLang || "en";
+        
+        // Use the OpenAI translation that's already done
+        const translation = await storage.addTranslation({
+          sourceText: req.body.text,
+          targetText: req.body.translatedText,
+          sourceLang,
+          targetLang,
+          roomId: req.body.roomId,
+          temp_user_uuid: req.body.temp_user_uuid,
+          user_emoji: req.body.user_emoji,
+          voiceType: req.body.voiceType || "female"
+        });
+        
+        // Broadcast the message to others in the room if needed
+        if (req.body.roomId) {
+          broadcast(req.body.roomId, {
+            type: 'chat',
+            text: req.body.text, 
+            translatedText: req.body.translatedText,
+            sourceLang,
+            targetLang,
+            timestamp: new Date().toISOString(),
+            roomId: req.body.roomId,
+            temp_user_uuid: req.body.temp_user_uuid,
+            user_emoji: req.body.user_emoji,
+            voiceType: req.body.voiceType || "female"
+          });
+        }
+        
+        return res.json(translation);
+      }
+      
+      // Standard translation flow
       const { sourceText, targetLang, roomId } = insertTranslationSchema.parse({
         sourceText: req.body.text,
         targetLang: req.body.targetLang,
-        sourceLang: "en",
+        sourceLang: req.body.sourceLang || "en",
         targetText: "",
         roomId: req.body.roomId 
       });
@@ -252,9 +292,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const translation = await storage.addTranslation({
         sourceText,
         targetText,
-        sourceLang: "en",
+        sourceLang: req.body.sourceLang || "en",
         targetLang,
         roomId,
+        temp_user_uuid: req.body.temp_user_uuid,
+        user_emoji: req.body.user_emoji,
         voiceType: req.body.voiceType || "female"
       });
 
@@ -362,6 +404,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'An unknown error occurred';
       console.error('Error creating real-time session:', message);
+      res.status(500).json({ message });
+    }
+  });
+  
+  // Special endpoint for direct message sending from OpenAI
+  app.post("/api/send-message", async (req, res) => {
+    try {
+      console.log('Direct message API called with:', JSON.stringify(req.body));
+      
+      // Need roomId, text, and other fields
+      const { roomId, text, translatedText, sourceLang, targetLang, temp_user_uuid, user_emoji } = req.body;
+      
+      if (!roomId || !text) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+      
+      // Save to database
+      const translation = await storage.addTranslation({
+        sourceText: text,
+        targetText: translatedText || text, // If no translation, use source
+        sourceLang: sourceLang || 'en',
+        targetLang: targetLang || 'en',
+        roomId,
+        temp_user_uuid: temp_user_uuid || 'unknown',
+        user_emoji: user_emoji || '🔷',
+        voiceType: req.body.voiceType || "female"
+      });
+      
+      // Broadcast to room if we have active connections
+      broadcast(roomId, {
+        type: 'chat',
+        text, 
+        translatedText: translatedText || text,
+        sourceLang: sourceLang || 'en',
+        targetLang: targetLang || 'en',
+        timestamp: new Date().toISOString(),
+        roomId,
+        temp_user_uuid: temp_user_uuid || 'unknown',
+        user_emoji: user_emoji || '🔷',
+        voiceType: req.body.voiceType || "female"
+      });
+      
+      res.json({ success: true, message: 'Message sent and stored', roomId, translation });
+    } catch (error) {
+      console.error('Error in send-message endpoint:', error);
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      res.status(500).json({ message });
+    }
+  });
+  
+  // Dedicated endpoint for OpenAI transcription messages
+  app.post("/api/openai-transcription", async (req, res) => {
+    try {
+      // Extract fields from request
+      const { 
+        text,
+        translatedText,
+        sourceLang,
+        targetLang,
+        roomId,
+        temp_user_uuid,
+        user_emoji,
+        voiceType = "female",
+        isOpenAI = true
+      } = req.body;
+      
+      console.log('Received OpenAI transcription:', {
+        text, translatedText, sourceLang, targetLang, roomId, 
+        temp_user_uuid: temp_user_uuid?.substring(0, 8) + '...',
+        user_emoji
+      });
+      
+      if (!text || !translatedText || !roomId) {
+        return res.status(400).json({ 
+          message: "Missing required fields",
+          required: ["text", "translatedText", "roomId"] 
+        });
+      }
+      
+      // Make sure the room exists
+      const roomExists = await storage.isRoomExists(roomId);
+      if (!roomExists) {
+        console.log(`Creating new room for OpenAI transcription: ${roomId}`);
+        // We'll create it on-the-fly for the transcription
+      }
+      
+      // Save the transcription to the database
+      const translation = await storage.addTranslation({
+        sourceText: text,
+        targetText: translatedText,
+        sourceLang: sourceLang || "en",
+        targetLang: targetLang || "en",
+        roomId,
+        temp_user_uuid,
+        user_emoji,
+        voiceType
+      });
+      
+      // Broadcast the message to other clients in the room
+      broadcast(roomId, {
+        type: 'chat',
+        text,
+        translatedText,
+        sourceLang: sourceLang || "en",
+        targetLang: targetLang || "en",
+        timestamp: translation.timestamp.toISOString(),
+        roomId,
+        temp_user_uuid,
+        user_emoji,
+        voiceType,
+        isOpenAI: true
+      });
+      
+      res.json({ 
+        success: true, 
+        message: "OpenAI transcription saved and broadcast",
+        translation
+      });
+    } catch (error) {
+      console.error('OpenAI transcription error:', error);
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
       res.status(500).json({ message });
     }
   });

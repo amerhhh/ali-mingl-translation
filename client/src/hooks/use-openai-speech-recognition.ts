@@ -212,10 +212,55 @@ export function useOpenAISpeechRecognition({
 
             if (data.transcription && data.transcription.text) {
               sourceText = data.transcription.text;
+              // Store raw transcription data in a global variable for debugging
+              (window as any).__openAIRawTranscription = {
+                sourceText,
+                timestamp: new Date().toISOString(),
+                raw: data.transcription,
+                fullPayload: data
+              };
+              
+              // Create or update debug element
+              const debugId = 'openai-debug-display';
+              let debugEl = document.getElementById(debugId);
+              if (!debugEl) {
+                debugEl = document.createElement('div');
+                debugEl.id = debugId;
+                debugEl.style.position = 'fixed';
+                debugEl.style.bottom = '10px';
+                debugEl.style.left = '10px';
+                debugEl.style.width = '300px';
+                debugEl.style.padding = '10px';
+                debugEl.style.background = 'rgba(0,0,0,0.7)';
+                debugEl.style.color = 'white';
+                debugEl.style.zIndex = '9999';
+                debugEl.style.fontSize = '12px';
+                debugEl.style.borderRadius = '5px';
+                document.body.appendChild(debugEl);
+              }
+              
+              // Update content
+              debugEl.innerHTML = `
+                <h4>OpenAI Debug Data</h4>
+                <p><strong>Source:</strong> ${sourceText}</p>
+                <p><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
+                <pre style="max-height:100px;overflow:auto">${JSON.stringify(data, null, 2).substring(0, 300)}...</pre>
+              `;
             }
 
             if (data.translation && data.translation.text) {
               translatedText = data.translation.text;
+              
+              // Also store translation
+              if ((window as any).__openAIRawTranscription) {
+                (window as any).__openAIRawTranscription.translatedText = translatedText;
+              }
+              
+              // Update debug element if it exists
+              const debugEl = document.getElementById('openai-debug-display');
+              if (debugEl) {
+                debugEl.innerHTML += `<p><strong>Translation:</strong> ${translatedText}</p>`;
+              }
             }
 
             // Only process final transcriptions with content
@@ -238,6 +283,10 @@ export function useOpenAISpeechRecognition({
                   const uuid = getCookieValue('chat_user_uuid') || 'unknown';
                   const emoji = sessionStorage.getItem('userEmoji') || '🌟';
                   
+                  // Extract roomId from the current path
+                  const pathParts = window.location.pathname.split('/');
+                  const roomIdFromPath = pathParts[pathParts.indexOf('chat') + 1] || 'default';
+                  
                   // Store in database through WebSocket with proper metadata
                   const wsMessage = {
                     type: 'chat',
@@ -249,57 +298,108 @@ export function useOpenAISpeechRecognition({
                     user_emoji: emoji,
                     timestamp: new Date().toISOString(),
                     voiceType: "female", // Add voice type
-                    isOpenAI: true // Flag to identify OpenAI transcripts
+                    isOpenAI: true, // Flag to identify OpenAI transcripts
+                    roomId: roomIdFromPath // Include room ID from path
                   };
 
                   console.log('Storing OpenAI transcript:', wsMessage);
-
+                  
+                  // Store in a global variable for debugging
+                  (window as any).__lastOpenAIMessage = wsMessage;
+                  
+                  // Make sure the roomId is included
+                  console.log(`Room ID from path: ${roomIdFromPath}`);
+                  
                   // Try to find active WebSocket instances
                   // Cast to any for searching global properties
                   const windowAny = window as any;
                   
-                  // Check for the stored WebSocket from useChatRoom
-                  if (windowAny.__chatWebSocket instanceof WebSocket && 
-                      windowAny.__chatWebSocket.readyState === WebSocket.OPEN) {
-                    // Use the global socket instance
-                    windowAny.__chatWebSocket.send(JSON.stringify(wsMessage));
-                    console.log('Sent message through existing global WebSocket');
-                  } else {
-                    // Try to get the WebSocket that's managed by useChatRoom
-                    console.log('Attempting to find active WebSocket...');
-                    
-                    // Alternative: direct connection to server with room message
-                    const host = window.location.host;
-                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${host}/ws`;
-                    
-                    const tempWs = new WebSocket(wsUrl);
-                    tempWs.onopen = () => {
-                      console.log('Temporary WebSocket opened for OpenAI transcript');
+                  try {
+                    // First try sending using the new dedicated endpoint
+                    try {
+                      console.log('Sending OpenAI transcription to dedicated endpoint');
+                      fetch('/api/openai-transcription', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          ...wsMessage,
+                          timestamp: new Date().toISOString()
+                        })
+                      })
+                      .then(response => {
+                        if (response.ok) {
+                          console.log('✓ Successfully sent OpenAI transcription via HTTP endpoint');
+                          return response.json();
+                        } else {
+                          throw new Error(`Server responded with ${response.status}`);
+                        }
+                      })
+                      .then(data => {
+                        console.log('Server response:', data);
+                      })
+                      .catch(error => {
+                        console.error('HTTP endpoint request failed:', error);
+                        // Fall back to WebSocket if HTTP fails
+                        trySendViaWebSocket();
+                      });
+                    } catch (httpErr) {
+                      console.error('HTTP endpoint request failed:', httpErr);
+                      // Fall back to WebSocket
+                      trySendViaWebSocket();
+                    }
+                  } catch (err) {
+                    console.error('Error handling OpenAI transcription:', err);
+                    trySendViaWebSocket();
+                  }
+                  
+                  // WebSocket fallback function
+                  function trySendViaWebSocket() {
+                    try {
+                      // Try existing WebSocket first
+                      if (windowAny.__chatWebSocket instanceof WebSocket && 
+                          windowAny.__chatWebSocket.readyState === WebSocket.OPEN) {
+                        // Use the global socket instance
+                        windowAny.__chatWebSocket.send(JSON.stringify(wsMessage));
+                        console.log('✓ Sent message through existing global WebSocket');
+                        return true;
+                      }
                       
-                      // First join the room
-                      const joinMessage = {
-                        type: 'join',
-                        roomId,
-                        temp_user_uuid: uuid,
-                        user_emoji: emoji
+                      // If no existing connection, create a temporary one
+                      console.log('Creating temporary WebSocket for OpenAI transcript');
+                      const host = window.location.host;
+                      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                      const wsUrl = `${protocol}//${host}/ws`;
+                      
+                      const tempWs = new WebSocket(wsUrl);
+                      
+                      tempWs.onopen = () => {
+                        console.log('Temporary WebSocket opened');
+                        
+                        // First join the room
+                        const joinMessage = {
+                          type: 'join',
+                          roomId: roomIdFromPath,
+                          temp_user_uuid: uuid,
+                          user_emoji: emoji
+                        };
+                        
+                        tempWs.send(JSON.stringify(joinMessage));
+                        
+                        // Then send the chat message after a short delay
+                        setTimeout(() => {
+                          tempWs.send(JSON.stringify(wsMessage));
+                          console.log('✓ Sent OpenAI transcript via temporary WebSocket');
+                          
+                          // Close connection after sending
+                          setTimeout(() => tempWs.close(), 500);
+                        }, 500);
                       };
                       
-                      tempWs.send(JSON.stringify(joinMessage));
-                      
-                      // Then send the chat message
-                      setTimeout(() => {
-                        tempWs.send(JSON.stringify(wsMessage));
-                        console.log('Sent OpenAI transcript via temporary connection');
-                        
-                        // Close after sending
-                        setTimeout(() => tempWs.close(), 500);
-                      }, 500);
-                    };
-                    
-                    tempWs.onerror = (err) => {
-                      console.error('Temporary WebSocket error:', err);
-                    };
+                      return true;
+                    } catch (wsErr) {
+                      console.error('All WebSocket attempts failed:', wsErr);
+                      return false;
+                    }
                   }
                 }
               } catch (error) {

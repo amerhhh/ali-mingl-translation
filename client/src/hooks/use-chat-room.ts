@@ -139,6 +139,10 @@ export function useChatRoom(roomId: string): ChatRoom {
       if (socket?.readyState === WebSocket.OPEN) {
         socket.close();
       }
+      
+      // Clear global references on unmount
+      (window as any).__chatWebSocket = null;
+      (window as any).__chatWebSocketReady = false;
     };
   }, []);
 
@@ -165,15 +169,19 @@ export function useChatRoom(roomId: string): ChatRoom {
       console.log('Using persistent userId:', userId);
 
       const ws = new WebSocket(wsUrl);
+      
+      // Store the socket instance globally immediately (for OpenAI hook to access)
+      (window as any).__chatWebSocket = ws;
+      console.log('WebSocket reference stored globally for sharing');
 
       ws.onopen = () => {
         console.log('WebSocket connected successfully');
         setIsConnected(true);
         setIsConnecting(false);
         reconnectAttempts.current = 0;
-
-        // Store the socket instance globally so other hooks (like OpenAI) can access it
-        (window as any).__chatWebSocket = ws;
+        
+        // Update the global with ready state
+        (window as any).__chatWebSocketReady = true;
         
         const joinMessage = {
           type: 'join',
@@ -239,7 +247,10 @@ export function useChatRoom(roomId: string): ChatRoom {
         console.log('WebSocket disconnected');
         setIsConnected(false);
         setSocket(null);
-
+        
+        // Clear global reference
+        (window as any).__chatWebSocketReady = false;
+        
         if (reconnectTimeout.current) {
           clearTimeout(reconnectTimeout.current);
         }

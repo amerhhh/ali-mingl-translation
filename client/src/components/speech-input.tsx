@@ -40,8 +40,28 @@ export function SpeechInput({
   const [textInput, setTextInput] = useState("");
   const [isResetting, setIsResetting] = useState(false);
   const [useOpenAI, setUseOpenAI] = useState<boolean>(false); // Default to WebSpeech as basic option
+  const [debugInfo, setDebugInfo] = useState<string>("");
   const lastSentText = useRef("");
   const { toast } = useToast();
+  
+  // Add debug panel to show the latest OpenAI transcriptions 
+  useEffect(() => {
+    // Function to update debug info
+    const updateDebugInfo = () => {
+      const openAIData = (window as any).__openAIRawTranscription;
+      if (openAIData) {
+        setDebugInfo(JSON.stringify({
+          source: openAIData.sourceText || "",
+          translation: openAIData.translatedText || "",
+          time: new Date().toLocaleTimeString()
+        }, null, 2));
+      }
+    };
+    
+    // Update every second
+    const interval = setInterval(updateDebugInfo, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // WebSpeech API hook
   const { 
@@ -326,6 +346,14 @@ export function SpeechInput({
               {currentText}
               {!transcriptResult.isFinal && <span className="ml-1 animate-pulse">▋</span>}
             </p>
+          )}
+          
+          {/* OpenAI Debug Panel */}
+          {useOpenAI && debugInfo && (
+            <Card className="mt-4 p-3 bg-slate-800 text-white">
+              <h4 className="text-xs font-medium mb-1">OpenAI Debug Info</h4>
+              <pre className="text-xs overflow-x-auto whitespace-pre-wrap">{debugInfo}</pre>
+            </Card>
           )}
         </div>
       </div>
