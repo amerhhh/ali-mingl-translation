@@ -221,14 +221,22 @@ export function useOpenAISpeechRecognition({
             // Only process final transcriptions with content
             if (sourceText && translatedText) {
               try {
-                // Get the current room ID from the URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const roomId = urlParams.get('roomId');
+                // Get the current room ID from the URL path
+                // Example: /chat/ABC or /listen/ABC where ABC is the room ID
+                const pathParts = window.location.pathname.split('/');
+                const roomId = pathParts.length > 2 ? pathParts[2] : null;
 
                 if (roomId) {
-                  // Ensure we have the required data
-                  const uuid = (window as any).__temp_user_uuid || 'unknown';
-                  const emoji = (window as any).__user_emoji || '🌟';
+                  // Get the user ID from cookies if possible
+                  const getCookieValue = (name: string) => {
+                    const value = `; ${document.cookie}`;
+                    const parts = value.split(`; ${name}=`);
+                    if (parts.length === 2) return parts.pop()?.split(';').shift();
+                    return null;
+                  };
+
+                  const uuid = getCookieValue('chat_user_uuid') || 'unknown';
+                  const emoji = sessionStorage.getItem('userEmoji') || '🌟';
                   
                   // Store in database through WebSocket with proper metadata
                   const wsMessage = {
@@ -240,16 +248,58 @@ export function useOpenAISpeechRecognition({
                     temp_user_uuid: uuid,
                     user_emoji: emoji,
                     timestamp: new Date().toISOString(),
+                    voiceType: "female", // Add voice type
                     isOpenAI: true // Flag to identify OpenAI transcripts
                   };
 
                   console.log('Storing OpenAI transcript:', wsMessage);
 
-                  // Send through WebSocket if available
-                  if (window.__chatWebSocket && window.__chatWebSocket.readyState === WebSocket.OPEN) {
-                    window.__chatWebSocket.send(JSON.stringify(wsMessage));
+                  // Try to find active WebSocket instances
+                  // Cast to any for searching global properties
+                  const windowAny = window as any;
+                  
+                  // Check for the stored WebSocket from useChatRoom
+                  if (windowAny.__chatWebSocket instanceof WebSocket && 
+                      windowAny.__chatWebSocket.readyState === WebSocket.OPEN) {
+                    // Use the global socket instance
+                    windowAny.__chatWebSocket.send(JSON.stringify(wsMessage));
+                    console.log('Sent message through existing global WebSocket');
                   } else {
-                    console.error('WebSocket not available for storing transcript');
+                    // Try to get the WebSocket that's managed by useChatRoom
+                    console.log('Attempting to find active WebSocket...');
+                    
+                    // Alternative: direct connection to server with room message
+                    const host = window.location.host;
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${host}/ws`;
+                    
+                    const tempWs = new WebSocket(wsUrl);
+                    tempWs.onopen = () => {
+                      console.log('Temporary WebSocket opened for OpenAI transcript');
+                      
+                      // First join the room
+                      const joinMessage = {
+                        type: 'join',
+                        roomId,
+                        temp_user_uuid: uuid,
+                        user_emoji: emoji
+                      };
+                      
+                      tempWs.send(JSON.stringify(joinMessage));
+                      
+                      // Then send the chat message
+                      setTimeout(() => {
+                        tempWs.send(JSON.stringify(wsMessage));
+                        console.log('Sent OpenAI transcript via temporary connection');
+                        
+                        // Close after sending
+                        setTimeout(() => tempWs.close(), 500);
+                      }, 500);
+                    };
+                    
+                    tempWs.onerror = (err) => {
+                      console.error('Temporary WebSocket error:', err);
+                    };
                   }
                 }
               } catch (error) {
@@ -274,6 +324,9 @@ export function useOpenAISpeechRecognition({
               };
 
               const isListenPage = window.location.pathname.includes('/listen');
+              // Check if this is Arabic-to-English or other language combination
+              const isArabicToEnglish = 
+                (language?.toLowerCase().startsWith('ar') && targetLanguage?.toLowerCase().startsWith('en'));
               
               // For Listen page, only play audio when we have a translation
               if (isListenPage && translatedText && remoteAudioElement.current) {

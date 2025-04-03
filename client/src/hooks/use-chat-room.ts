@@ -58,14 +58,23 @@ export function useChatRoom(roomId: string): ChatRoom {
       const newUUID = uuidv4();
       setCookie('chat_user_uuid', newUUID);
       console.log('Generated new UUID:', newUUID);
+      // Store in window for OpenAI hook access
+      (window as any).__temp_user_uuid = newUUID;
       return newUUID;
     }
     console.log('Using cookie UUID:', cookieUUID);
+    // Store in window for OpenAI hook access
+    (window as any).__temp_user_uuid = cookieUUID;
     return cookieUUID;
   });
 
   // Initialize with a random emoji, but this might be updated from message history
-  const [userEmoji, setUserEmoji] = useState<UserEmoji>(getRandomEmoji);
+  const [userEmoji, setUserEmoji] = useState<UserEmoji>(() => {
+    const emoji = getRandomEmoji();
+    // Store in window for OpenAI hook access
+    (window as any).__user_emoji = emoji;
+    return emoji;
+  });
 
   const messageQueue = useRef<{ text: string; sourceLang: string; targetLang: string }[]>([]);
   const reconnectTimeout = useRef<NodeJS.Timeout>();
@@ -163,6 +172,9 @@ export function useChatRoom(roomId: string): ChatRoom {
         setIsConnecting(false);
         reconnectAttempts.current = 0;
 
+        // Store the socket instance globally so other hooks (like OpenAI) can access it
+        (window as any).__chatWebSocket = ws;
+        
         const joinMessage = {
           type: 'join',
           roomId,
@@ -317,6 +329,7 @@ export function useChatRoom(roomId: string): ChatRoom {
   // Store emoji whenever it changes
   useEffect(() => {
     sessionStorage.setItem('userEmoji', userEmoji);
+    (window as any).__user_emoji = userEmoji;
   }, [userEmoji]);
 
   useEffect(() => {
