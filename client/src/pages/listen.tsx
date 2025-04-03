@@ -308,31 +308,49 @@ export default function Listen() {
   useEffect(() => {
     const latestMessage = messages[messages.length - 1];
     if (isInitialized && latestMessage && speakerEnabled) {
+      addDebugLog(`Message received - Text: "${latestMessage.translatedText.substring(0, 20)}..." Lang: ${latestMessage.targetLang}`);
+      
       // Cancel any ongoing speech
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
+        addDebugLog('Cancelled any ongoing speech');
       }
       
       // Delay to ensure cancellation completes
       setTimeout(() => {
         // Verify this is a target language message
         if (latestMessage.targetLang === targetLang) {
-          console.log("LISTEN PAGE: Playing only target language:", latestMessage.translatedText);
+          addDebugLog(`✓ Attempting to play target language message`);
+          
           // Create utterance manually with explicit target language
           const utterance = new SpeechSynthesisUtterance(latestMessage.translatedText);
           utterance.lang = getLanguageCode(targetLang as LanguageCode);
           utterance.rate = 1;
           utterance.pitch = 1;
           
-          // Log before playback
-          console.log("Playing utterance with language:", utterance.lang);
+          // Add event handlers for debugging
+          utterance.onstart = () => addDebugLog('Speech started');
+          utterance.onend = () => addDebugLog('Speech completed');
+          utterance.onerror = (e) => addDebugLog(`Speech error: ${e.error}`);
           
-          // Play using direct SpeechSynthesis API instead of wrapper
-          window.speechSynthesis.speak(utterance);
+          addDebugLog(`Configured utterance with language: ${utterance.lang}`);
+          
+          // Play using direct SpeechSynthesis API
+          try {
+            window.speechSynthesis.speak(utterance);
+            addDebugLog('Speech synthesis started');
+          } catch (error) {
+            addDebugLog(`Failed to start speech: ${error}`);
+          }
+        } else {
+          addDebugLog(`✗ Skipped non-target language message`);
         }
       }, 300);
+    } else {
+      if (!isInitialized) addDebugLog('Speech synthesis not initialized');
+      if (!speakerEnabled) addDebugLog('Speaker is disabled');
     }
-  }, [messages, speakerEnabled, isInitialized, targetLang]);
+  }, [messages, speakerEnabled, isInitialized, targetLang, addDebugLog]);
 
   const copyRoomId = () => {
     if (currentRoomId) {
