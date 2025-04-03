@@ -523,135 +523,124 @@ export default function ChatRoom() {
             </div>
           </Card>
 
-          <Tabs defaultValue="chat" className="w-full">
-            <TabsList className="w-full">
-              <TabsTrigger value="chat">Chat</TabsTrigger>
-              <TabsTrigger value="help">Help</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="chat">
-              <Card className="p-4 shadow-lg bg-white">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between flex-wrap gap-4">
-                    <h2 className="text-lg font-semibold">{uiText.translationSettings}</h2>
-                    <div className="flex items-center gap-2 sm:gap-4">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={playTargetLanguage}
-                          onCheckedChange={setPlayTargetLanguage}
-                          id="play-target-lang"
-                        />
-                        <label
-                          htmlFor="play-target-lang"
-                          className="text-sm text-muted-foreground whitespace-nowrap"
-                        >
-                          {uiText.replayTranslated}
-                        </label>
-                      </div>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setSpeakerEnabled(!speakerEnabled)}
-                              className={cn(
-                                "transition-colors",
-                                speakerEnabled ? "text-primary" : "text-muted-foreground"
-                              )}
-                            >
-                              {speakerEnabled ? (
-                                <Volume2 className="h-4 w-4" />
-                              ) : (
-                                <VolumeX className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p>{uiText.autoPlayMatching} {speakerEnabled ? uiText.on : uiText.off}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <LanguageSelector
-                        value={sourceLang}
-                        onChange={setSourceLang}
-                        label={uiText.from}
-                        placeholder="Source language"
-                      />
-                    </div>
+          <div className="space-y-6">
+            <Card className="p-4 shadow-lg bg-white">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <h2 className="text-lg font-semibold">{uiText.translationSettings}</h2>
+                  <div className="flex items-center gap-2 sm:gap-4">
                     <div className="flex items-center gap-2">
-                      <div className="flex-1">
-                        <LanguageSelector
-                          value={targetLang}
-                          onChange={setTargetLang}
-                          label={uiText.to}
-                          placeholder="Target language"
-                        />
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleSwapLanguages}
-                        className="mt-6"
+                      <Switch
+                        checked={playTargetLanguage}
+                        onCheckedChange={setPlayTargetLanguage}
+                        id="play-target-lang"
+                      />
+                      <label
+                        htmlFor="play-target-lang"
+                        className="text-sm text-muted-foreground whitespace-nowrap"
                       >
-                        <ArrowLeftRight className="h-4 w-4" />
-                      </Button>
+                        {uiText.replayTranslated}
+                      </label>
                     </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSpeakerEnabled(!speakerEnabled)}
+                            className={cn(
+                              "transition-colors",
+                              speakerEnabled ? "text-primary" : "text-muted-foreground"
+                            )}
+                          >
+                            {speakerEnabled ? (
+                              <Volume2 className="h-4 w-4" />
+                            ) : (
+                              <VolumeX className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>{uiText.autoPlayMatching} {speakerEnabled ? uiText.on : uiText.off}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
-              </Card>
 
-              <div className="space-y-8 mt-8">
-                <SpeechInput
-                  onTranscriptChange={handleTranscript}
-                  language={sourceLang}
-                  targetLanguage={targetLang}
-                  uiText={{
-                    speakNow: uiText.speakNow,
-                    inputDevice: uiText.inputDevice,
-                    outputDevice: uiText.outputDevice,
-                    typeMessage: uiText.typeMessage
-                  }}
-                />
-
-                <ChatMessages
-                  messages={messages.map((msg) => ({
-                    sourceText: msg.text,
-                    targetText: msg.translatedText,
-                    sourceLang: msg.sourceLang as LanguageCode,
-                    targetLang: msg.targetLang as LanguageCode,
-                    timestamp: new Date(msg.timestamp),
-                    userEmoji: msg.user_emoji,
-                    isCurrentUser: msg.temp_user_uuid === userId,
-                    temp_user_uuid: msg.temp_user_uuid
-                  }))}
-                  currentTranslation={currentTranslation && !isSpeaking ? {
-                    ...currentTranslation,
-                    userEmoji,
-                    temp_user_uuid: userId
-                  } : undefined}
-                  onPlayTranslation={(text, lang) =>
-                    handlePlayTranslation(
-                      text,
-                      lang,
-                      true
-                    )
-                  }
-                  isSpeaking={isSpeaking}
-                  uiText={uiText}
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <LanguageSelector
+                      value={sourceLang}
+                      onChange={setSourceLang}
+                      label={uiText.from}
+                      placeholder="Source language"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <LanguageSelector
+                        value={targetLang}
+                        onChange={setTargetLang}
+                        label={uiText.to}
+                        placeholder="Target language"
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSwapLanguages}
+                      className="mt-6"
+                    >
+                      <ArrowLeftRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </TabsContent>
+            </Card>
 
-            <TabsContent value="help">
-              <Documentation className="min-h-[500px]" sourceLang={sourceLang} />
-            </TabsContent>
-          </Tabs>
+            <div className="space-y-8">
+              <SpeechInput
+                onTranscriptChange={handleTranscript}
+                language={sourceLang}
+                targetLanguage={targetLang}
+                uiText={{
+                  speakNow: uiText.speakNow,
+                  inputDevice: uiText.inputDevice,
+                  outputDevice: uiText.outputDevice,
+                  typeMessage: uiText.typeMessage
+                }}
+              />
+
+              <ChatMessages
+                messages={messages.map((msg) => ({
+                  sourceText: msg.text,
+                  targetText: msg.translatedText,
+                  sourceLang: msg.sourceLang as LanguageCode,
+                  targetLang: msg.targetLang as LanguageCode,
+                  timestamp: new Date(msg.timestamp),
+                  userEmoji: msg.user_emoji,
+                  isCurrentUser: msg.temp_user_uuid === userId,
+                  temp_user_uuid: msg.temp_user_uuid
+                }))}
+                currentTranslation={currentTranslation && !isSpeaking ? {
+                  ...currentTranslation,
+                  userEmoji,
+                  temp_user_uuid: userId
+                } : undefined}
+                onPlayTranslation={(text, lang) =>
+                  handlePlayTranslation(
+                    text,
+                    lang,
+                    true
+                  )
+                }
+                isSpeaking={isSpeaking}
+                uiText={uiText}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>

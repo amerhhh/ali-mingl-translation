@@ -625,103 +625,97 @@ export default function Listen() {
             </div>
           </Card>
 
-          <Tabs defaultValue="chat" className="w-full">
-            <TabsList className="w-full">
-              <TabsTrigger value="chat">Chat</TabsTrigger>
-              <TabsTrigger value="help">Help</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="chat">
-              <Card className="p-4 shadow-sm bg-blue-50 border-blue-200">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between flex-wrap gap-4">
-                    <h2 className="text-lg font-semibold">{uiText.translationSettings}</h2>
-                    <div className="flex items-center gap-2 sm:gap-4">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={playTargetLanguage}
-                          onCheckedChange={setPlayTargetLanguage}
-                          id="play-target-lang"
-                        />
-                        <label
-                          htmlFor="play-target-lang"
-                          className="text-sm text-muted-foreground whitespace-nowrap"
-                        >
-                          {uiText.replayTranslated}
-                        </label>
-                      </div>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setSpeakerEnabled(!speakerEnabled)}
-                              className={cn(
-                                "transition-colors",
-                                speakerEnabled ? "text-primary" : "text-muted-foreground"
-                              )}
-                            >
-                              {speakerEnabled ? (
-                                <Volume2 className="h-4 w-4" />
-                              ) : (
-                                <VolumeX className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p>{uiText.autoPlayMatching} {speakerEnabled ? uiText.on : uiText.off}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <LanguageSelector
-                        value={sourceLang}
-                        onChange={setSourceLang}
-                        label={uiText.from}
-                        placeholder="Source language"
-                      />
-                    </div>
+          <div className="space-y-6">
+            <Card className="p-4 shadow-sm bg-blue-50 border-blue-200">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <h2 className="text-lg font-semibold">{uiText.translationSettings}</h2>
+                  <div className="flex items-center gap-2 sm:gap-4">
                     <div className="flex items-center gap-2">
-                      <div className="flex-1">
-                        <LanguageSelector
-                          value={targetLang}
-                          onChange={setTargetLang}
-                          label={uiText.to}
-                          placeholder="Target language"
-                        />
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleSwapLanguages}
-                        className="mt-6"
+                      <Switch
+                        checked={playTargetLanguage}
+                        onCheckedChange={setPlayTargetLanguage}
+                        id="play-target-lang"
+                      />
+                      <label
+                        htmlFor="play-target-lang"
+                        className="text-sm text-muted-foreground whitespace-nowrap"
                       >
-                        <ArrowLeftRight className="h-4 w-4" />
-                      </Button>
+                        {uiText.replayTranslated}
+                      </label>
                     </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSpeakerEnabled(!speakerEnabled)}
+                            className={cn(
+                              "transition-colors",
+                              speakerEnabled ? "text-primary" : "text-muted-foreground"
+                            )}
+                          >
+                            {speakerEnabled ? (
+                              <Volume2 className="h-4 w-4" />
+                            ) : (
+                              <VolumeX className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>{uiText.autoPlayMatching} {speakerEnabled ? uiText.on : uiText.off}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
-              </Card>
 
-              <div className="space-y-8 mt-8">
-                <SpeechInput
-                  onTranscriptChange={handleListenTranscript}
-                  language={sourceLang}
-                  targetLanguage={targetLang}
-                  uiText={{
-                    speakNow: uiText.speakNow,
-                    inputDevice: uiText.inputDevice,
-                    outputDevice: uiText.outputDevice,
-                    typeMessage: uiText.typeMessage
-                  }}
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <LanguageSelector
+                      value={sourceLang}
+                      onChange={setSourceLang}
+                      label={uiText.from}
+                      placeholder="Source language"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <LanguageSelector
+                        value={targetLang}
+                        onChange={setTargetLang}
+                        label={uiText.to}
+                        placeholder="Target language"
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSwapLanguages}
+                      className="mt-6"
+                    >
+                      <ArrowLeftRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
 
-                {/* Listen page version of ChatMessages - showing only target language translations */}
+            <div className="space-y-8">
+              <SpeechInput
+                onTranscriptChange={handleListenTranscript}
+                language={sourceLang}
+                targetLanguage={targetLang}
+                uiText={{
+                  speakNow: uiText.speakNow,
+                  inputDevice: uiText.inputDevice,
+                  outputDevice: uiText.outputDevice,
+                  typeMessage: uiText.typeMessage
+                }}
+              />
+
+              {/* Listen page version of ChatMessages - showing only target language translations */}
               <div className="space-y-4 rounded-lg bg-blue-100/50 p-4 backdrop-blur-sm shadow-inner border border-blue-200">
                 <h2 className="text-xl font-semibold text-center">
                   {messages.length > 0 ? 'Translations' : uiText.startConversation}
@@ -781,13 +775,8 @@ export default function Listen() {
                   </div>
                 )}
               </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="help">
-              <Documentation className="min-h-[500px]" sourceLang={sourceLang} />
-            </TabsContent>
-          </Tabs>
+            </div>
+          </div>
           
           {/* Debug logs section (only visible in development) */}
           <Collapsible className="mt-4 border rounded-lg">
