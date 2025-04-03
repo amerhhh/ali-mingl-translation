@@ -161,24 +161,22 @@ export function useOpenAISpeechRecognition({
       // Add audio track handler
       peerConnection.current.ontrack = (e) => {
         if (remoteAudioElement.current) {
-          // Get current page and language settings
           const isListenPage = window.location.pathname.includes('/listen');
-
-          // Use the actual selected languages from the dropdowns
-          const currentSourceLang = language?.toLowerCase() || '';
-          const currentTargetLang = targetLanguage?.toLowerCase() || '';
-
-          // Check if we need special handling (source -> target language filtering)
-          const needsFiltering = isListenPage && currentSourceLang && currentTargetLang;
-
-          if (needsFiltering) {
-            // Store stream for filtered playback
-            console.log(`Language detection - Source: ${currentSourceLang}, Target: ${currentTargetLang}`);
-            (window as any).__openAIOriginalStream = e.streams[0];
-          } else {
-            // Normal playback for other cases
-            remoteAudioElement.current.srcObject = e.streams[0];
+          
+          // Store the stream for later use
+          (window as any).__openAIOriginalStream = e.streams[0];
+          
+          // Only do special handling on Listen page
+          if (isListenPage) {
+            console.log('Listen page detected - Audio will be filtered by language');
+            
+            // Don't immediately set audio - wait for translation confirmation
+            // The audio will be played when we receive a translation in the dataChannel
+            return;
           }
+          
+          // For non-Listen pages, play audio normally
+          remoteAudioElement.current.srcObject = e.streams[0];
         }
       };
 
@@ -250,19 +248,14 @@ export function useOpenAISpeechRecognition({
             }
 
             // Update transcript result
-            // For consistency with our app's behavior, we always update with the source text
-            // The Listen page will specifically handle the translation differently
             setTranscriptResult({
               finalText: sourceText,
               interimText: "",
               isFinal: true
             });
 
-            // Call the onTranslation callback if provided
-            // This allows the Listen page to handle the translation separately from the Chat page
-            // We also store the translation in a custom property for the Listen page
             if (onTranslation && sourceText) {
-              // Set a flag for Listen page to know we have a translation ready
+              // Store latest translation data
               (window as any).__latestOpenAITranslation = {
                 sourceText,
                 translatedText: translatedText || '',
@@ -270,14 +263,19 @@ export function useOpenAISpeechRecognition({
                 targetLang: targetLanguage
               };
 
-              // If we're on the Listen page with Arabic->English, now we can allow audio playback
-              // for the translated response (English only)
               const isListenPage = window.location.pathname.includes('/listen');
-
-              // Using the same approach as above for consistent detection
-              const isArabicSource = language?.toLowerCase().startsWith('ar');
-              const isEnglishTarget = targetLanguage?.toLowerCase().startsWith('en');
-              const isArabicToEnglish = isArabicSource && isEnglishTarget;
+              
+              // For Listen page, only play audio when we have a translation
+              if (isListenPage && translatedText && remoteAudioElement.current) {
+                console.log('Playing translated audio on Listen page');
+                
+                // Get the stored stream and assign it now that we know it's translated content
+                const originalStream = (window as any).__openAIOriginalStream;
+                if (originalStream) {
+                  remoteAudioElement.current.srcObject = originalStream;
+                  console.log('Audio stream assigned for translation playback');
+                }
+              }
 
               console.log(`Translation detected - Allow playback? ${isListenPage && isArabicToEnglish && !!translatedText}`);
 
