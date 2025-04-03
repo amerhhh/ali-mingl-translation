@@ -161,41 +161,22 @@ export function useOpenAISpeechRecognition({
       // Add audio track handler
       peerConnection.current.ontrack = (e) => {
         if (remoteAudioElement.current) {
-          // Check if we're on the Listen page and if we're in a language situation that requires filtering
+          // Get current page and language settings
           const isListenPage = window.location.pathname.includes('/listen');
 
-          // Check if we're translating from Arabic to English, being more permissive with how we detect Arabic
-          // This will match 'ar', 'ar-SA', 'ar-EG', etc.
-          const isArabicSource = language?.toLowerCase().startsWith('ar');
-          const isEnglishTarget = targetLanguage?.toLowerCase().startsWith('en');
-          const isArabicToEnglish = isArabicSource && isEnglishTarget;
+          // Use the actual selected languages from the dropdowns
+          const currentSourceLang = language?.toLowerCase() || '';
+          const currentTargetLang = targetLanguage?.toLowerCase() || '';
 
-          console.log(`Language detection - Source: ${language} (isArabic: ${isArabicSource}), Target: ${targetLanguage} (isEnglish: ${isEnglishTarget})`);
+          // Check if we need special handling (source -> target language filtering)
+          const needsFiltering = isListenPage && currentSourceLang && currentTargetLang;
 
-          // For the Listen page with Arabic as source, special handling to block Arabic audio
-          if (isListenPage && isArabicToEnglish) {
-            console.log('Listen page with Arabic source detected - not playing source audio from OpenAI');
-
-            // Instead of immediately setting the srcObject, we'll create a filtered MediaStream
-            // that only includes audio if we know it's a translated output
-            const originalStream = e.streams[0];
-
-            // Create a flag in window to track if we're expecting a translation response
-            if (!(window as any).__openAIAudioState) {
-              (window as any).__openAIAudioState = {
-                expectingTranslation: false,
-                lastTranslationTime: 0
-              };
-            }
-
-            // We'll modify the stream object but not assign it immediately
-            // It will only be assigned when we know we have a translation
-            (window as any).__openAIOriginalStream = originalStream;
-
-            // Don't immediately set the srcObject - wait for translation confirmation
-            console.log('Audio playback pending translation confirmation');
+          if (needsFiltering) {
+            // Store stream for filtered playback
+            console.log(`Language detection - Source: ${currentSourceLang}, Target: ${currentTargetLang}`);
+            (window as any).__openAIOriginalStream = e.streams[0];
           } else {
-            // Normal behavior for other pages or language combinations
+            // Normal playback for other cases
             remoteAudioElement.current.srcObject = e.streams[0];
           }
         }
