@@ -107,23 +107,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
             try {
               console.log('Processing chat message:', message);
 
-              // If the message already has translatedText, it means it was processed by the API
-              // Just broadcast it without storing again
+              // Store all messages, including those from OpenAI
               if (message.translatedText) {
+                // Always store in database, even pre-translated messages
+                const savedTranslation = await storage.addTranslation({
+                  sourceText: message.text,
+                  targetText: message.translatedText,
+                  sourceLang: message.sourceLang || "en",
+                  targetLang: message.targetLang,
+                  roomId: currentRoom,
+                  temp_user_uuid: message.temp_user_uuid,
+                  user_emoji: message.user_emoji
+                });
+
                 const chatMessage = {
                   type: 'chat',
                   text: message.text,
                   translatedText: message.translatedText,
                   sourceLang: message.sourceLang || "en",
                   targetLang: message.targetLang,
-                  timestamp: message.timestamp,
+                  timestamp: savedTranslation.timestamp.toISOString(),
                   roomId: currentRoom,
                   temp_user_uuid: message.temp_user_uuid,
-                  user_emoji: message.user_emoji
+                  user_emoji: message.user_emoji,
+                  isOpenAI: message.isOpenAI
                 };
 
                 // Broadcast to all clients in the room
-                console.log('Broadcasting message to room:', currentRoom);
+                console.log('Broadcasting stored message to room:', currentRoom);
                 broadcast(currentRoom, chatMessage, ws);
               } else {
                 // If no translatedText, this is a new message that needs translation

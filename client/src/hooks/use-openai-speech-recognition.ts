@@ -226,20 +226,30 @@ export function useOpenAISpeechRecognition({
                 const roomId = urlParams.get('roomId');
 
                 if (roomId) {
-                  // Store in database through WebSocket
+                  // Ensure we have the required data
+                  const uuid = (window as any).__temp_user_uuid || 'unknown';
+                  const emoji = (window as any).__user_emoji || '🌟';
+                  
+                  // Store in database through WebSocket with proper metadata
                   const wsMessage = {
                     type: 'chat',
                     text: sourceText,
                     translatedText: translatedText,
                     sourceLang: language || 'en',
                     targetLang: targetLanguage || 'en',
-                    temp_user_uuid: window.__temp_user_uuid, // Assuming this is set elsewhere
-                    user_emoji: window.__user_emoji // Assuming this is set elsewhere
+                    temp_user_uuid: uuid,
+                    user_emoji: emoji,
+                    timestamp: new Date().toISOString(),
+                    isOpenAI: true // Flag to identify OpenAI transcripts
                   };
 
-                  // Find the WebSocket instance (it's typically stored in the window object)
+                  console.log('Storing OpenAI transcript:', wsMessage);
+
+                  // Send through WebSocket if available
                   if (window.__chatWebSocket && window.__chatWebSocket.readyState === WebSocket.OPEN) {
                     window.__chatWebSocket.send(JSON.stringify(wsMessage));
+                  } else {
+                    console.error('WebSocket not available for storing transcript');
                   }
                 }
               } catch (error) {
