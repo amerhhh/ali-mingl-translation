@@ -1,6 +1,31 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiRequest } from "@/lib/queryClient";
 
+// Declare global window properties for TypeScript
+declare global {
+  interface Window {
+    __openAIRawTranscription: {
+      sourceText: string;
+      translatedText: string;
+      isComplete: boolean;
+      isSourceComplete?: boolean;
+    };
+    __lastOpenAIMessage: {
+      text: string;
+      translatedText: string;
+      timestamp: string;
+      raw?: any;
+    };
+    __lastOpenAIProcessedData: any;
+    __userId: string;
+    __temp_user_uuid: string;
+    __userEmoji: string;
+    __user_emoji: string;
+    __minglWebSocket: WebSocket;
+    __chatWebSocket: WebSocket;
+  }
+}
+
 interface TranscriptResult {
   finalText: string;
   interimText: string;
@@ -116,487 +141,1216 @@ export function useOpenAISpeechRecognition({
 
   // Create a real-time session with OpenAI
   const createRealtimeSession = useCallback(async () => {
-    try {
-      setIsConnecting(true);
-      setError(null);
+    let attempts = 0;
+    const maxAttempts = 3;
+    let lastError: Error | null = null;
+    
+    while (attempts < maxAttempts) {
+      try {
+        setIsConnecting(true);
+        setError(null);
+        attempts++;
+        
+        console.log(`[OpenAI Session] Attempt ${attempts}/${maxAttempts} to create session`);
 
-      // Step 1: Get an ephemeral key from our server
-      const response = await apiRequest<SessionResponse>({
-        url: "/api/realtime-session",
-        method: "POST",
-        data: {
-          sourceLang: language,
-          targetLang: targetLanguage
-        },
-        on401: "throw"
-      });
+        // Extract room ID for logging
+        let roomId = 'unknown';
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlRoomId = urlParams.get('id');
+          if (urlRoomId) {
+            roomId = urlRoomId;
+          } else {
+            // Try to get from path
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts.length > 2) {
+              // Check if we're in a chat or listen page
+              if (pathParts.includes('chat') || pathParts.includes('listen')) {
+                const segmentType = pathParts.includes('chat') ? 'chat' : 'listen';
+                const segmentIndex = pathParts.indexOf(segmentType);
+                if (segmentIndex >= 0 && segmentIndex + 1 < pathParts.length) {
+                  roomId = pathParts[segmentIndex + 1];
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[OpenAI Session] Error extracting room ID:", e);
+        }
 
-      if (!response || !response.client_secret || !response.client_secret.value) {
-        throw new Error('Invalid session token received');
+        // Step 1: Get an ephemeral key from our server
+        const response = await apiRequest<SessionResponse>({
+          url: "/api/realtime-session",
+          method: "POST",
+          data: {
+            sourceLang: language,
+            targetLang: targetLanguage,
+            roomId: roomId // Include room ID in the request
+          },
+          on401: "throw"
+        });
+
+        if (!response || !response.client_secret || !response.client_secret.value) {
+          throw new Error('Invalid session token received');
+        }
+
+        sessionToken.current = response.client_secret.value;
+        console.log(`[OpenAI Session] Received session token for room ${roomId}`);
+
+        return true;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`[OpenAI Session] Error creating realtime session (attempt ${attempts}/${maxAttempts}):`, lastError.message);
+        
+        // Differentiate between error types for retry strategy
+        const errorMessage = lastError.message.toLowerCase();
+        const isRateLimitError = errorMessage.includes('rate limit') || errorMessage.includes('too many requests');
+        const isServerError = errorMessage.includes('server error') || errorMessage.includes('500') || errorMessage.includes('502');
+        const isAuthError = errorMessage.includes('unauthorized') || errorMessage.includes('401') || errorMessage.includes('forbidden') || errorMessage.includes('403');
+        
+        // Don't retry auth errors
+        if (isAuthError) {
+          console.log("[OpenAI Session] Authentication error - not retrying");
+          break;
+        }
+        
+        // Wait longer for rate limit errors
+        if (attempts < maxAttempts) {
+          const retryDelay = isRateLimitError ? 2000 : (isServerError ? 1000 : 500) * attempts;
+          console.log(`[OpenAI Session] Retrying in ${retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
       }
-
-      sessionToken.current = response.client_secret.value;
-      console.log('Received session token');
-
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Error creating realtime session:', message);
-      setError(`Failed to create session: ${message}`);
-      setIsConnecting(false);
-      return false;
     }
+    
+    // All attempts failed
+    const message = lastError?.message || 'Unknown error occurred';
+    console.error('[OpenAI Session] All attempts to create session failed:', message);
+    setError(`Failed to create session: ${message}`);
+    setIsConnecting(false);
+    return false;
   }, [language, targetLanguage]);
 
   // Initialize WebRTC connection
   const initializeWebRTC = useCallback(async () => {
-    try {
-      if (!sessionToken.current) {
-        throw new Error('No session token available');
-      }
+    let attempts = 0;
+    const maxAttempts = 2;
+    
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+        console.log(`[OpenAI WebRTC] Connection attempt ${attempts}/${maxAttempts}`);
+        
+        if (!sessionToken.current) {
+          throw new Error('No session token available');
+        }
 
-      // Create a peer connection
-      peerConnection.current = new RTCPeerConnection();
+        // Create a peer connection
+        const rtcConfig = {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+          ]
+        };
+        peerConnection.current = new RTCPeerConnection(rtcConfig);
+        console.log('[OpenAI WebRTC] Peer connection created');
 
-      // Add audio track handler
-      peerConnection.current.ontrack = (e) => {
-        if (remoteAudioElement.current) {
-          const isListenPage = window.location.pathname.includes('/listen');
+        // Add connection state change handling
+        peerConnection.current.onconnectionstatechange = () => {
+          console.log('[OpenAI WebRTC] Connection state:', peerConnection.current?.connectionState);
           
-          // Store the stream for later use
-          (window as any).__openAIOriginalStream = e.streams[0];
-          
-          // Only do special handling on Listen page
-          if (isListenPage) {
-            console.log('Listen page detected - Audio will be filtered by language');
+          // Handle different connection states
+          if (peerConnection.current) {
+            const state = peerConnection.current.connectionState;
             
-            // Don't immediately set audio - wait for translation confirmation
-            // The audio will be played when we receive a translation in the dataChannel
-            return;
+            if (state === 'failed') {
+              console.error('[OpenAI WebRTC] Connection failed, attempting recovery...');
+              setError('WebRTC connection failed. Trying to recover...');
+              
+              // Try to recover connection after a short delay
+              setTimeout(() => {
+                // IMPORTANT: Only try to reconnect if we were listening
+                // This prevents auto-stopping behavior
+                if (isListening) {
+                  console.log('[OpenAI WebRTC] Attempting to reconnect after failure');
+                  // Clean up old connection
+                  cleanupConnection();
+                  // Try to recreate session
+                  createRealtimeSession().then(sessionCreated => {
+                    if (sessionCreated) {
+                      initializeWebRTC();
+                    } else {
+                      // Only set isListening false if recreation fails
+                      setIsListening(false);
+                      setError('Failed to recover WebRTC connection. Please try again.');
+                    }
+                  });
+                }
+              }, 1000);
+            } 
+            else if (state === 'disconnected') {
+              console.warn('[OpenAI WebRTC] Connection disconnected temporarily');
+              // Don't immediately set error or stop listening for temporary disconnects
+              // as the connection might recover
+              
+              // Set a timeout - if we're still disconnected after 5 seconds, then stop
+              setTimeout(() => {
+                // IMPORTANT: Only stop if we're still in the disconnected state
+                // AND we're supposed to be listening
+                if (peerConnection.current?.connectionState === 'disconnected' && isListening) {
+                  console.error('[OpenAI WebRTC] Connection remained disconnected, stopping');
+                  setError('WebRTC connection disconnected');
+                  
+                  // NOW we can stop listening since we've been disconnected for a while
+                  setIsListening(false);
+                }
+              }, 5000);
+            }
+            else if (state === 'connected') {
+              // Clear any previous connection errors
+              setError(null);
+              
+              // Log that we're successfully connected
+              console.log('[OpenAI WebRTC] Connection state changed to connected - recognition active');
+              
+              // Force a delay before allowing any stop calls
+              (window as any).__openAIStartTime = Date.now();
+            }
           }
-          
-          // For non-Listen pages, play audio normally
-          remoteAudioElement.current.srcObject = e.streams[0];
-        }
-      };
+        };
 
-      // Add local audio track for microphone input
-      const constraints: MediaStreamConstraints = {
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-        video: false
-      };
+        // Add ICE connection state change handling
+        peerConnection.current.oniceconnectionstatechange = () => {
+          console.log('[OpenAI WebRTC] ICE connection state:', peerConnection.current?.iceConnectionState);
+        };
 
-      localStream.current = await navigator.mediaDevices.getUserMedia(constraints);
+        // Add audio track handler
+        peerConnection.current.ontrack = (e) => {
+          if (remoteAudioElement.current) {
+            const isListenPage = window.location.pathname.includes('/listen');
+            const isChatPage = window.location.pathname.includes('/chat');
+            
+            // Store the stream for later use
+            (window as any).__openAIOriginalStream = e.streams[0];
+            
+            // MODIFIED: Always set audio source in Listen mode to allow real-time OpenAI voice 
+            // But don't set it in Chat mode unless configured to do so
+            if (isListenPage || !isChatPage) {
+              remoteAudioElement.current.srcObject = e.streams[0];
+              console.log('[OpenAI WebRTC] Set audio source for remote audio element in', isListenPage ? 'Listen page' : 'other page');
+            } else {
+              console.log('[OpenAI WebRTC] In Chat page - not setting audio source to prevent voice playback');
+              // Don't set the audio source to prevent any playback
+            }
+          }
+        };
 
-      // Add track to peer connection
-      localStream.current.getTracks().forEach(track => {
-        if (peerConnection.current) {
-          peerConnection.current.addTrack(track, localStream.current!);
-        }
-      });
+        // Setup ICE candidate handling
+        peerConnection.current.onicecandidate = (event) => {
+          if (event.candidate) {
+            console.log('[OpenAI WebRTC] New ICE candidate:', event.candidate.candidate.substr(0, 30) + '...');
+          }
+        };
 
-      // Set up data channel for sending and receiving events
-      dataChannel.current = peerConnection.current.createDataChannel('oai-events');
-
-      // Setup data channel event handlers
-      dataChannel.current.onmessage = async (event) => {
+        // Add local audio track for microphone input
         try {
-          // Try to parse as JSON
-          const data = JSON.parse(event.data);
+          const constraints: MediaStreamConstraints = {
+            audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+            video: false
+          };
 
-          // Handle specific session events
-          if (data.type === 'caption') {
-            // Handle transcription/translation
-            let sourceText = '';
-            let translatedText = '';
+          localStream.current = await navigator.mediaDevices.getUserMedia(constraints);
+          console.log('[OpenAI WebRTC] Got local media stream');
 
-            if (data.transcription && data.transcription.text) {
-              sourceText = data.transcription.text;
-              // Store raw transcription data in a global variable for debugging
-              (window as any).__openAIRawTranscription = {
-                sourceText,
-                timestamp: new Date().toISOString(),
-                raw: data.transcription,
-                fullPayload: data
-              };
-              
-              // Create or update debug element
-              const debugId = 'openai-debug-display';
-              let debugEl = document.getElementById(debugId);
-              if (!debugEl) {
-                debugEl = document.createElement('div');
-                debugEl.id = debugId;
-                debugEl.style.position = 'fixed';
-                debugEl.style.bottom = '10px';
-                debugEl.style.left = '10px';
-                debugEl.style.width = '300px';
-                debugEl.style.padding = '10px';
-                debugEl.style.background = 'rgba(0,0,0,0.7)';
-                debugEl.style.color = 'white';
-                debugEl.style.zIndex = '9999';
-                debugEl.style.fontSize = '12px';
-                debugEl.style.borderRadius = '5px';
-                document.body.appendChild(debugEl);
+          // Add track to peer connection
+          localStream.current.getTracks().forEach(track => {
+            if (peerConnection.current) {
+              peerConnection.current.addTrack(track, localStream.current!);
+              console.log(`[OpenAI WebRTC] Added ${track.kind} track to peer connection`);
+            }
+          });
+        } catch (mediaError) {
+          console.error('[OpenAI WebRTC] Media device error:', mediaError);
+          throw new Error(`Microphone access failed: ${mediaError instanceof Error ? mediaError.message : String(mediaError)}`);
+        }
+
+        // Set up data channel for sending and receiving events
+        dataChannel.current = peerConnection.current.createDataChannel('oai-events');
+        console.log('[OpenAI WebRTC] Data channel created');
+
+        // Setup data channel event handlers
+        dataChannel.current.onmessage = (event) => {
+          console.log("[OpenAI WebRTC] Received data channel message", event.data);
+          
+          // Store raw data for debugging
+          (window as any).__lastOpenAIMessage = {
+            raw: event.data,
+            timestamp: new Date().toISOString()
+          };
+
+          try {
+            let data;
+            // Handle different data formats
+            if (typeof event.data === 'string') {
+              try {
+                data = JSON.parse(event.data);
+              } catch (e) {
+                console.warn("[OpenAI WebRTC] Received non-JSON string data:", event.data);
+                data = { text: event.data };
               }
-              
-              // Update content
+            } else if (event.data instanceof Blob) {
+              console.log("[OpenAI WebRTC] Received blob data, not processing");
+              return;
+            } else {
+              console.warn("[OpenAI WebRTC] Received unknown data type:", typeof event.data);
+              return;
+            }
+
+            // Extract room ID for logging
+            let roomId = 'unknown';
+            try {
+              const urlParams = new URLSearchParams(window.location.search);
+              const urlRoomId = urlParams.get('id');
+              if (urlRoomId) {
+                roomId = urlRoomId;
+              } else {
+                // Try to get from path
+                const pathParts = window.location.pathname.split('/');
+                if (pathParts.length > 2) {
+                  // Check if we're in a chat or listen page
+                  if (pathParts.includes('chat') || pathParts.includes('listen')) {
+                    const segmentType = pathParts.includes('chat') ? 'chat' : 'listen';
+                    const segmentIndex = pathParts.indexOf(segmentType);
+                    if (segmentIndex >= 0 && segmentIndex + 1 < pathParts.length) {
+                      roomId = pathParts[segmentIndex + 1];
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              console.error("[OpenAI WebRTC] Error extracting room ID:", e);
+            }
+            
+            console.log(`[OpenAI WebRTC] Parsed data for room ${roomId}:`, data);
+
+            // Track full transcript across messages
+            if (!window.__openAIRawTranscription) {
+              window.__openAIRawTranscription = { 
+                sourceText: '', 
+                translatedText: '', 
+                isComplete: false 
+              };
+            }
+
+            // Handle different message types
+            switch (data.type) {
+              case 'response.audio_transcript.delta':
+                // Append delta to transcript
+                if (data.delta) {
+                  // If we have a newline character, it signals the boundary between source and translation
+                  if (data.delta === '\n') {
+                    window.__openAIRawTranscription.isSourceComplete = true;
+                  } else if (window.__openAIRawTranscription.isSourceComplete) {
+                    // Add to translation
+                    window.__openAIRawTranscription.translatedText += data.delta;
+                  } else {
+                    // Add to source text
+                    window.__openAIRawTranscription.sourceText += data.delta;
+                  }
+                }
+                break;
+
+              case 'response.audio_transcript.done':
+                // Complete transcript received
+                if (data.transcript) {
+                  const parts = data.transcript.split('\n');
+                  if (parts.length >= 2) {
+                    window.__openAIRawTranscription = {
+                      sourceText: parts[0],
+                      translatedText: parts[1],
+                      isComplete: true
+                    };
+
+                    // Also update the lastOpenAIMessage for compatibility
+                    window.__lastOpenAIMessage = {
+                      text: parts[0],
+                      translatedText: parts[1],
+                      timestamp: new Date().toISOString()
+                    };
+
+                    console.log("[OpenAI WebRTC] Complete transcript received:", {
+                      source: parts[0],
+                      translation: parts[1]
+                    });
+                  }
+                }
+                break;
+
+              case 'input_audio_buffer.speech_started':
+                // Speech started
+                console.log("[OpenAI WebRTC] Speech started");
+                break;
+
+              case 'input_audio_buffer.speech_stopped':
+                // Speech stopped
+                console.log("[OpenAI WebRTC] Speech stopped");
+                // Wait a short time for any final processing to complete
+                setTimeout(() => {
+                  // If we have a complete transcript, process it now
+                  if (window.__openAIRawTranscription && 
+                      window.__openAIRawTranscription.sourceText && 
+                      window.__openAIRawTranscription.translatedText) {
+                    
+                    // Process the final transcript
+                    const { sourceText, translatedText } = window.__openAIRawTranscription;
+                    console.log("[OpenAI WebRTC] Processing final transcript after speech stopped:", {
+                      source: sourceText.substring(0, 30) + "...",
+                      translation: translatedText.substring(0, 30) + "..."
+                    });
+                    
+                    // Check if we're in listen mode
+                    const isListenPage = window.location.pathname.includes('/listen');
+                    
+                    // For listen mode, use persistent tracking to completely prevent duplication
+                    if (isListenPage) {
+                      // Create a message fingerprint
+                      const messageKey = `${sourceText}-${translatedText}`;
+                      
+                      // Use a shared global cache for listen mode messages
+                      const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
+                      
+                      // NEW: Additional language detection for listen mode
+                      const isLikelySourceLanguage = (() => {
+                        // Get the current source language from window if available
+                        const currentSourceLang = (window as any).__listenSourceLang || language?.split('-')[0] || 'en';
+                        
+                        // If source language is Arabic, check for Arabic characters
+                        if (currentSourceLang === 'ar' && !/[\u0600-\u06FF]/.test(sourceText)) {
+                          console.log(`[OpenAI WebRTC] Source text doesn't contain Arabic characters, likely in source language`);
+                          return true;
+                        }
+                        
+                        // If source language is English, check for mostly Latin characters
+                        if (currentSourceLang === 'en' && /^[a-zA-Z\s.,!?'"-]+$/.test(sourceText)) {
+                          console.log(`[OpenAI WebRTC] Source text appears to be in English, blocking in listen mode`);
+                          return true;
+                        }
+                        
+                        // Add more language checks as needed
+                        return false;
+                      })();
+                      
+                      // Check if this appears to be source language content in listen mode
+                      if (isLikelySourceLanguage) {
+                        console.log(`[OpenAI WebRTC] BLOCKING source language content in listen mode:`, sourceText.substring(0, 30) + "...");
+                        
+                        // Reset transcript to prevent further processing attempts
+                        window.__openAIRawTranscription = {
+                          sourceText: '',
+                          translatedText: '',
+                          isComplete: false,
+                          isSourceComplete: false
+                        };
+                        
+                        return;
+                      }
+                      
+                      // Check if we've seen this message before in listen mode
+                      if (processedMessages[messageKey]) {
+                        console.log(`[OpenAI WebRTC] BLOCKING duplicate transcript after speech stopped in listen mode:`, sourceText.substring(0, 30) + "...");
+                        
+                        // Reset transcript for next utterance to prevent further processing attempts
+                        window.__openAIRawTranscription = {
+                          sourceText: '',
+                          translatedText: '',
+                          isComplete: false,
+                          isSourceComplete: false
+                        };
+                        
+                        return;
+                      }
+                      
+                      // Mark it as processed to prevent duplicate processing elsewhere
+                      processedMessages[messageKey] = true;
+                      console.log(`[OpenAI WebRTC] First time processing transcript after speech stopped in listen mode:`, sourceText.substring(0, 30) + "...");
+                      
+                      // NEW: Explicitly flag this as target language content for speech synthesis
+                      (window as any).__isTargetLanguageRequest = true;
+                      (window as any).__listenTargetLang = targetLanguage?.split('-')[0] || 'en';
+                    }
+                    
+                    // Call the callback with the final transcript
+                    if (onTranslation) {
+                      onTranslation(sourceText, translatedText);
+                    }
+                    
+                    // Send to server
+                    sendToServer(sourceText, translatedText, roomId);
+                    
+                    // Reset transcript for next utterance
+                    window.__openAIRawTranscription = {
+                      sourceText: '',
+                      translatedText: '',
+                      isComplete: false,
+                      isSourceComplete: false
+                    };
+                  }
+                }, 300);
+                break;
+                
+              case 'response.output_item.done':
+                // Process the completed assistant item
+                if (data.item && data.item.content && data.item.content.length > 0) {
+                  const content = data.item.content[0];
+                  if (content.type === "audio" && content.transcript) {
+                    // Extract source and translation from transcript
+                    const transcript = content.transcript;
+                    const parts = transcript.split('\n').filter((part: string) => part.trim() !== '');
+                    
+                    if (parts.length >= 2) {
+                      const sourceText = parts[0];
+                      const translatedText = parts[parts.length - 1]; // Get the last part as translation
+                      
+                      // Check if we're in listen mode
+                      const isListenPage = window.location.pathname.includes('/listen');
+                      
+                      // For listen mode, use persistent tracking to completely prevent duplication
+                      if (isListenPage) {
+                        // Create a message fingerprint
+                        const messageKey = `${sourceText}-${translatedText}`;
+                        
+                        // Use a shared global cache for listen mode messages
+                        const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
+                        
+                        // NEW: Additional language detection for listen mode
+                        const isLikelySourceLanguage = (() => {
+                          // Get the current source language from window if available
+                          const currentSourceLang = (window as any).__listenSourceLang || language?.split('-')[0] || 'en';
+                          
+                          // If source language is Arabic, check for Arabic characters
+                          if (currentSourceLang === 'ar' && !/[\u0600-\u06FF]/.test(sourceText)) {
+                            console.log(`[OpenAI WebRTC] Output item: Source text doesn't contain Arabic characters, likely source language`);
+                            return true;
+                          }
+                          
+                          // If source language is English, check for mostly Latin characters
+                          if (currentSourceLang === 'en' && /^[a-zA-Z\s.,!?'"-]+$/.test(sourceText)) {
+                            console.log(`[OpenAI WebRTC] Output item: Source text appears to be in English, blocking in listen mode`);
+                            return true;
+                          }
+                          
+                          // Add more language checks as needed
+                          return false;
+                        })();
+                        
+                        // Check if this appears to be source language content
+                        if (isLikelySourceLanguage) {
+                          console.log(`[OpenAI WebRTC] BLOCKING source language content in output item:`, sourceText.substring(0, 30) + "...");
+                          return;
+                        }
+                        
+                        // Check if we've seen this message before in listen mode
+                        if (processedMessages[messageKey]) {
+                          console.log(`[OpenAI WebRTC] BLOCKING duplicate item output in listen mode:`, sourceText.substring(0, 30) + "...");
+                          return;
+                        }
+                        
+                        // Mark it as "about to be processed" to prevent duplicate processing
+                        // The sendToServer function will also check this same registry
+                        processedMessages[messageKey] = true;
+                        console.log(`[OpenAI WebRTC] First time processing this output item in listen mode:`, sourceText.substring(0, 30) + "...");
+                        
+                        // NEW: Explicitly flag this as target language content for speech synthesis
+                        (window as any).__isTargetLanguageRequest = true;
+                        (window as any).__listenTargetLang = targetLanguage?.split('-')[0] || 'en';
+                      } else {
+                        // In chat mode, use the regular time-based deduplication
+                        const lastProcessedTime = (window as any).__lastProcessedTimestamp || 0;
+                        const lastProcessedText = (window as any).__lastProcessedText || '';
+                        const now = Date.now();
+                        
+                        // Don't process duplicate messages within 3 seconds in chat mode
+                        if (lastProcessedText === sourceText && (now - lastProcessedTime) < 3000) {
+                          console.log("[OpenAI WebRTC] Skipping duplicate message in chat mode:", sourceText.substring(0, 30) + "...");
+                          return;
+                        }
+                        
+                        // Update last processed info for chat mode
+                        (window as any).__lastProcessedTimestamp = now;
+                        (window as any).__lastProcessedText = sourceText;
+                      }
+                      
+                      window.__openAIRawTranscription = {
+                        sourceText,
+                        translatedText,
+                        isComplete: true
+                      };
+
+                      // Update lastOpenAIMessage for compatibility
+                      window.__lastOpenAIMessage = {
+                        text: sourceText,
+                        translatedText,
+                        timestamp: new Date().toISOString()
+                      };
+
+                      console.log("[OpenAI WebRTC] Complete message transcript:", {
+                        source: sourceText,
+                        translation: translatedText,
+                        fullTranscript: transcript
+                      });
+                    }
+                  }
+                }
+                break;
+            }
+
+            // Add debug display element if not exists
+            let debugEl = document.getElementById('openai-debug-display');
+            if (!debugEl && process.env.NODE_ENV === 'development') {
+              debugEl = document.createElement('div');
+              debugEl.id = 'openai-debug-display';
+              debugEl.style.position = 'fixed';
+              debugEl.style.bottom = '10px';
+              debugEl.style.right = '10px';
+              debugEl.style.width = '300px';
+              debugEl.style.maxHeight = '200px';
+              debugEl.style.overflow = 'auto';
+              debugEl.style.background = 'rgba(0,0,0,0.7)';
+              debugEl.style.color = 'white';
+              debugEl.style.padding = '10px';
+              debugEl.style.zIndex = '9999';
+              debugEl.style.fontSize = '12px';
+              debugEl.style.borderRadius = '5px';
+              document.body.appendChild(debugEl);
+            }
+
+            if (debugEl && process.env.NODE_ENV === 'development') {
+              const rawTranscription = window.__openAIRawTranscription || { sourceText: 'N/A', translatedText: 'N/A' };
               debugEl.innerHTML = `
-                <h4>OpenAI Debug Data</h4>
-                <p><strong>Source:</strong> ${sourceText}</p>
-                <p><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
-                <pre style="max-height:100px;overflow:auto">${JSON.stringify(data, null, 2).substring(0, 300)}...</pre>
+                <strong>OpenAI WebRTC Debug</strong><br/>
+                Room: ${roomId}<br/>
+                Source: ${rawTranscription.sourceText || 'N/A'}<br/>
+                Translation: ${rawTranscription.translatedText || 'N/A'}<br/>
+                Time: ${new Date().toISOString().split('T')[1].split('.')[0]}
               `;
             }
 
-            if (data.translation && data.translation.text) {
-              translatedText = data.translation.text;
+            // Process the text data if complete transcript is available
+            if (window.__openAIRawTranscription && window.__openAIRawTranscription.isComplete) {
+              const { sourceText, translatedText } = window.__openAIRawTranscription;
               
-              // Also store translation
-              if ((window as any).__openAIRawTranscription) {
-                (window as any).__openAIRawTranscription.translatedText = translatedText;
-              }
-              
-              // Update debug element if it exists
-              const debugEl = document.getElementById('openai-debug-display');
-              if (debugEl) {
-                debugEl.innerHTML += `<p><strong>Translation:</strong> ${translatedText}</p>`;
-              }
-            }
-
-            // Only process final transcriptions with content
-            if (sourceText && translatedText) {
-              try {
-                // Get the current room ID from the URL path
-                // Example: /chat/ABC or /listen/ABC where ABC is the room ID
-                const pathParts = window.location.pathname.split('/');
-                const roomId = pathParts.length > 2 ? pathParts[2] : null;
-
-                if (roomId) {
-                  // Get the user ID from cookies if possible
-                  const getCookieValue = (name: string) => {
-                    const value = `; ${document.cookie}`;
-                    const parts = value.split(`; ${name}=`);
-                    if (parts.length === 2) return parts.pop()?.split(';').shift();
-                    return null;
-                  };
-
-                  const uuid = getCookieValue('chat_user_uuid') || 'unknown';
-                  const emoji = sessionStorage.getItem('userEmoji') || '🌟';
-                  
-                  // Extract roomId from the current path
-                  const pathParts = window.location.pathname.split('/');
-                  const roomIdFromPath = pathParts[pathParts.indexOf('chat') + 1] || 'default';
-                  
-                  // Store in database through WebSocket with proper metadata
-                  const wsMessage = {
-                    type: 'chat',
-                    text: sourceText,
-                    translatedText: translatedText,
-                    sourceLang: language || 'en',
-                    targetLang: targetLanguage || 'en',
-                    temp_user_uuid: uuid,
-                    user_emoji: emoji,
-                    timestamp: new Date().toISOString(),
-                    voiceType: "female", // Add voice type
-                    isOpenAI: true, // Flag to identify OpenAI transcripts
-                    roomId: roomIdFromPath // Include room ID from path
-                  };
-
-                  console.log('Storing OpenAI transcript:', wsMessage);
-                  
-                  // Store in a global variable for debugging
-                  (window as any).__lastOpenAIMessage = wsMessage;
-                  
-                  // Make sure the roomId is included
-                  console.log(`Room ID from path: ${roomIdFromPath}`);
-                  
-                  // Try to find active WebSocket instances
-                  // Cast to any for searching global properties
-                  const windowAny = window as any;
-                  
-                  try {
-                    // First try sending using the new dedicated endpoint
-                    try {
-                      console.log('Sending OpenAI transcription to dedicated endpoint');
-                      fetch('/api/openai-transcription', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          ...wsMessage,
-                          timestamp: new Date().toISOString()
-                        })
-                      })
-                      .then(response => {
-                        if (response.ok) {
-                          console.log('✓ Successfully sent OpenAI transcription via HTTP endpoint');
-                          return response.json();
-                        } else {
-                          throw new Error(`Server responded with ${response.status}`);
-                        }
-                      })
-                      .then(data => {
-                        console.log('Server response:', data);
-                      })
-                      .catch(error => {
-                        console.error('HTTP endpoint request failed:', error);
-                        // Fall back to WebSocket if HTTP fails
-                        trySendViaWebSocket();
-                      });
-                    } catch (httpErr) {
-                      console.error('HTTP endpoint request failed:', httpErr);
-                      // Fall back to WebSocket
-                      trySendViaWebSocket();
-                    }
-                  } catch (err) {
-                    console.error('Error handling OpenAI transcription:', err);
-                    trySendViaWebSocket();
-                  }
-                  
-                  // WebSocket fallback function
-                  function trySendViaWebSocket() {
-                    try {
-                      // Try existing WebSocket first
-                      if (windowAny.__chatWebSocket instanceof WebSocket && 
-                          windowAny.__chatWebSocket.readyState === WebSocket.OPEN) {
-                        // Use the global socket instance
-                        windowAny.__chatWebSocket.send(JSON.stringify(wsMessage));
-                        console.log('✓ Sent message through existing global WebSocket');
-                        return true;
-                      }
-                      
-                      // If no existing connection, create a temporary one
-                      console.log('Creating temporary WebSocket for OpenAI transcript');
-                      const host = window.location.host;
-                      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                      const wsUrl = `${protocol}//${host}/ws`;
-                      
-                      const tempWs = new WebSocket(wsUrl);
-                      
-                      tempWs.onopen = () => {
-                        console.log('Temporary WebSocket opened');
-                        
-                        // First join the room
-                        const joinMessage = {
-                          type: 'join',
-                          roomId: roomIdFromPath,
-                          temp_user_uuid: uuid,
-                          user_emoji: emoji
-                        };
-                        
-                        tempWs.send(JSON.stringify(joinMessage));
-                        
-                        // Then send the chat message after a short delay
-                        setTimeout(() => {
-                          tempWs.send(JSON.stringify(wsMessage));
-                          console.log('✓ Sent OpenAI transcript via temporary WebSocket');
-                          
-                          // Close connection after sending
-                          setTimeout(() => tempWs.close(), 500);
-                        }, 500);
-                      };
-                      
-                      return true;
-                    } catch (wsErr) {
-                      console.error('All WebSocket attempts failed:', wsErr);
-                      return false;
-                    }
-                  }
-                }
-              } catch (error) {
-                console.error('Failed to store transcription:', error);
-              }
-            }
-
-            // Update transcript result
-            setTranscriptResult({
-              finalText: sourceText,
-              interimText: "",
-              isFinal: true
-            });
-
-            if (onTranslation && sourceText) {
-              // Store latest translation data
-              (window as any).__latestOpenAITranslation = {
-                sourceText,
-                translatedText: translatedText || '',
-                sourceLang: language,
-                targetLang: targetLanguage
-              };
-
-              const isListenPage = window.location.pathname.includes('/listen');
-              // Check if this is Arabic-to-English or other language combination
-              const isArabicToEnglish = 
-                (language?.toLowerCase().startsWith('ar') && targetLanguage?.toLowerCase().startsWith('en'));
-              
-              // For Listen page, only play audio when we have a translation
-              if (isListenPage && translatedText && remoteAudioElement.current) {
-                console.log('Playing translated audio on Listen page');
+              if (sourceText && translatedText) {
+                console.log(`[OpenAI WebRTC] Text: ${sourceText.substring(0, 30)}...`);
+                console.log(`[OpenAI WebRTC] Translation: ${translatedText.substring(0, 30)}...`);
                 
-                // Get the stored stream and assign it now that we know it's translated content
-                const originalStream = (window as any).__openAIOriginalStream;
-                if (originalStream) {
-                  remoteAudioElement.current.srcObject = originalStream;
-                  console.log('Audio stream assigned for translation playback');
+                // Check if we're in listen mode
+                const isListenPage = window.location.pathname.includes('/listen');
+                
+                // For listen mode, use our global registry of processed messages
+                if (isListenPage) {
+                  // Create a message fingerprint
+                  const messageKey = `${sourceText}-${translatedText}`;
+                  
+                  // Use a shared global cache for listen mode messages
+                  const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
+                  
+                  // Check if we've seen this message before in listen mode
+                  if (processedMessages[messageKey]) {
+                    console.log(`[OpenAI WebRTC] BLOCKING duplicate complete transcript in listen mode:`, sourceText.substring(0, 30) + "...");
+                    
+                    // Reset transcript to prevent further processing attempts
+                    window.__openAIRawTranscription = {
+                      sourceText: '',
+                      translatedText: '',
+                      isComplete: false,
+                      isSourceComplete: false
+                    };
+                    
+                    return;
+                  }
+                  
+                  // Mark it as processed to prevent duplicate processing elsewhere
+                  processedMessages[messageKey] = true;
+                  console.log(`[OpenAI WebRTC] First time processing complete transcript in listen mode:`, sourceText.substring(0, 30) + "...");
+                }
+                // If not in listen mode, use our previous deduplication approach
+                else {
+                  // Skip if we've already processed this exact message in the last 5 seconds
+                  const lastProcessedKey = `${sourceText}-${translatedText}`;
+                  const lastProcessedMap = (window as any).__lastProcessedMap || {};
+                  const now = Date.now();
+                  const lastProcessed = lastProcessedMap[lastProcessedKey] || 0;
+                  
+                  if (now - lastProcessed < 5000) {
+                    console.log(`[OpenAI WebRTC] Skipping duplicate processing in chat mode:`, sourceText.substring(0, 30) + "...");
+                    
+                    // Reset the transcript to prevent further processing attempts
+                    window.__openAIRawTranscription = {
+                      sourceText: '',
+                      translatedText: '',
+                      isComplete: false,
+                      isSourceComplete: false
+                    };
+                    
+                    return;
+                  }
+                  
+                  // Update the last processed time
+                  lastProcessedMap[lastProcessedKey] = now;
+                  (window as any).__lastProcessedMap = lastProcessedMap;
+                }
+                
+                // Store data for global access by other components
+                (window as any).__lastOpenAIProcessedData = {
+                  sourceText,
+                  translatedText,
+                  roomId,
+                  timestamp: new Date().toISOString()
+                };
+                
+                // Directly call the onTranslation callback to update the UI
+                if (onTranslation) {
+                  console.log("[OpenAI WebRTC] Calling onTranslation callback with:", { 
+                    sourceText: sourceText.substring(0, 30) + "...", 
+                    translatedText: translatedText.substring(0, 30) + "..."
+                  });
+                  onTranslation(sourceText, translatedText);
+                  
+                  // Also send to the server, but don't reset isComplete flag yet
+                  // to allow the message to be displayed in the UI first
+                  sendToServer(sourceText, translatedText, roomId);
+                  
+                  // Reset the transcript after a short delay to allow UI to update
+                  setTimeout(() => {
+                    window.__openAIRawTranscription = {
+                      sourceText: '',
+                      translatedText: '',
+                      isComplete: false,
+                      isSourceComplete: false
+                    };
+                  }, 500);
+                } else {
+                  console.warn("[OpenAI WebRTC] No onTranslation callback available");
+                  // Still try to send to server
+                  sendToServer(sourceText, translatedText, roomId);
+                  
+                  // Reset the complete flag since we can't show in UI
+                  window.__openAIRawTranscription.isComplete = false;
                 }
               }
-
-              console.log(`Translation detected - Allow playback? ${isListenPage && isArabicToEnglish && !!translatedText}`);
-
-              if (isListenPage && isArabicToEnglish && translatedText && remoteAudioElement.current) {
-                console.log('✓ Now allowing English translation audio on Listen page');
-
-                // Get the original stream that was stored but not assigned
-                const originalStream = (window as any).__openAIOriginalStream;
-                if (originalStream) {
-                  // Now it's safe to assign the stream because we know it contains translated audio
-                  remoteAudioElement.current.srcObject = originalStream;
-                  console.log('Audio stream assigned for translation playback');
-                }
-              }
-
-              onTranslation(sourceText, translatedText || '');
             }
-          } else if (data.type === 'interim_caption') {
-            // Handle interim results
-            let sourceText = '';
-
-            if (data.transcription && data.transcription.text) {
-              sourceText = data.transcription.text;
-            }
-
-            // Update transcript result with interim text
-            setTranscriptResult(prev => ({
-              ...prev,
-              interimText: sourceText,
-              isFinal: false
-            }));
+          } catch (err) {
+            console.error("[OpenAI WebRTC] Error processing message:", err, "Raw data:", event.data);
           }
-        } catch (e) {
-          // If not JSON, handle as plain text
-          console.log("Received text:", event.data);
+        };
+
+        dataChannel.current.onopen = () => {
+          console.log('[OpenAI WebRTC] Data channel opened');
+          
+          // Make sure we're still set to listening even after the data channel opens
+          // This prevents any state changes from closing the connection
+          setIsListening(true);
+          
+          // Mark that the connection is fully ready
+          (window as any).__openAIConnectionReady = true;
+          
+          // Set a timestamp to prevent rapid closing
+          (window as any).__openAIDataChannelOpenTime = Date.now();
+        };
+
+        dataChannel.current.onerror = (error) => {
+          console.error('[OpenAI WebRTC] Data channel error:', error);
+          // Don't set error unless it's been open for a while
+          const openTime = (window as any).__openAIDataChannelOpenTime || 0;
+          const now = Date.now();
+          if (now - openTime > 2000) {
+            setError('Connection error occurred');
+          }
+        };
+
+        dataChannel.current.onclose = () => {
+          console.log('[OpenAI WebRTC] Data channel closed');
+          
+          // Only set isListening to false if it's been open for a while
+          // This prevents React state batching from triggering unintentional closures
+          const openTime = (window as any).__openAIDataChannelOpenTime || 0;
+          const now = Date.now();
+          if (now - openTime > 2000) {
+            setIsListening(false);
+          } else {
+            console.log('[OpenAI WebRTC] Data channel closed too soon after opening - ignoring');
+          }
+        };
+
+        // Start the session using SDP
+        console.log('[OpenAI WebRTC] Creating offer');
+        const offer = await peerConnection.current.createOffer();
+        await peerConnection.current.setLocalDescription(offer);
+        console.log('[OpenAI WebRTC] Local description set');
+
+        // Send SDP offer to OpenAI
+        try {
+          const baseUrl = 'https://api.openai.com/v1/realtime';
+          const model = 'gpt-4o-realtime-preview-2024-12-17';
+          console.log(`[OpenAI WebRTC] Sending SDP offer to ${baseUrl}`);
+          
+          const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+            method: 'POST',
+            body: offer.sdp,
+            headers: {
+              'Authorization': `Bearer ${sessionToken.current}`,
+              'Content-Type': 'application/sdp'
+            },
+          });
+
+          if (!sdpResponse.ok) {
+            const errorText = await sdpResponse.text().catch(() => 'No error text available');
+            throw new Error(`SDP response error: ${sdpResponse.status} ${sdpResponse.statusText} - ${errorText}`);
+          }
+
+          const answerSdp = await sdpResponse.text();
+          console.log('[OpenAI WebRTC] Received SDP answer');
+          
+          const answer = {
+            type: 'answer' as RTCSdpType,
+            sdp: answerSdp,
+          };
+
+          await peerConnection.current.setRemoteDescription(answer);
+          console.log('[OpenAI WebRTC] Remote description set');
+
+          // Set isListening explicitly here to prevent premature cleanup
+          setIsListening(true);
+          
+          // Delay completing setup to prevent race conditions in React state updates
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          setIsConnecting(false);
+          console.log('[OpenAI WebRTC] Connection established successfully');
+
+          return true;
+        } catch (sdpError) {
+          console.error('[OpenAI WebRTC] SDP exchange error:', sdpError);
+          throw sdpError;
         }
-      };
-
-      dataChannel.current.onopen = () => {
-        console.log('Data channel opened');
-      };
-
-      dataChannel.current.onerror = (error) => {
-        console.error('Data channel error:', error);
-        setError('Connection error occurred');
-      };
-
-      dataChannel.current.onclose = () => {
-        console.log('Data channel closed');
-        setIsListening(false);
-      };
-
-      // Start the session using SDP
-      const offer = await peerConnection.current.createOffer();
-      await peerConnection.current.setLocalDescription(offer);
-
-      // Send SDP offer to OpenAI
-      const baseUrl = 'https://api.openai.com/v1/realtime';
-      const model = 'gpt-4o-realtime-preview-2024-12-17';
-      const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
-        method: 'POST',
-        body: offer.sdp,
-        headers: {
-          'Authorization': `Bearer ${sessionToken.current}`,
-          'Content-Type': 'application/sdp'
-        },
-      });
-
-      if (!sdpResponse.ok) {
-        throw new Error(`SDP response error: ${sdpResponse.status} ${sdpResponse.statusText}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error occurred';
+        console.error(`[OpenAI WebRTC] Initialization error (attempt ${attempts}/${maxAttempts}):`, message);
+        
+        if (attempts < maxAttempts) {
+          console.log(`[OpenAI WebRTC] Retrying connection in ${1000 * attempts}ms...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+          // Clean up failed connection before retry
+          cleanupConnection();
+        } else {
+          setError(`Connection error: ${message}`);
+          setIsConnecting(false);
+          cleanupConnection();
+          return false;
+        }
       }
-
-      const answerSdp = await sdpResponse.text();
-      const answer = {
-        type: 'answer' as RTCSdpType,
-        sdp: answerSdp,
-      };
-
-      await peerConnection.current.setRemoteDescription(answer);
-
-      setIsConnecting(false);
-      setIsListening(true);
-      console.log('WebRTC connection established');
-
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('WebRTC initialization error:', message);
-      setError(`Connection error: ${message}`);
-      setIsConnecting(false);
-      cleanupConnection();
-      return false;
     }
+    
+    // If we reach here, all attempts failed
+    setError('Failed to establish WebRTC connection after multiple attempts');
+    setIsConnecting(false);
+    return false;
   }, [deviceId, language, targetLanguage, onTranslation]);
 
   // Clean up WebRTC connection
   const cleanupConnection = useCallback(() => {
+    // First make sure to clear any state that might get us stuck
+    setIsListening(false);
+    
+    // Clear any keepalive interval
+    if ((window as any).__openAIKeepaliveInterval) {
+      clearInterval((window as any).__openAIKeepaliveInterval);
+      (window as any).__openAIKeepaliveInterval = null;
+    }
+    
     // Close data channel
     if (dataChannel.current) {
-      dataChannel.current.close();
+      try {
+        dataChannel.current.close();
+      } catch (e) {
+        console.error('[OpenAI WebRTC] Error closing data channel:', e);
+      }
       dataChannel.current = null;
     }
 
     // Close peer connection
     if (peerConnection.current) {
-      peerConnection.current.close();
+      try {
+        peerConnection.current.close();
+      } catch (e) {
+        console.error('[OpenAI WebRTC] Error closing peer connection:', e);
+      }
       peerConnection.current = null;
     }
 
     // Stop local media tracks
     if (localStream.current) {
-      localStream.current.getTracks().forEach(track => track.stop());
+      try {
+        localStream.current.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {
+            console.error('[OpenAI WebRTC] Error stopping track:', e);
+          }
+        });
+      } catch (e) {
+        console.error('[OpenAI WebRTC] Error stopping local stream:', e);
+      }
       localStream.current = null;
     }
 
     // Clear remote audio element
     if (remoteAudioElement.current) {
-      remoteAudioElement.current.srcObject = null;
+      try {
+        remoteAudioElement.current.srcObject = null;
+        remoteAudioElement.current.pause();
+      } catch (e) {
+        console.error('[OpenAI WebRTC] Error clearing remote audio element:', e);
+      }
     }
 
     sessionToken.current = null;
+    
+    // Reset any OpenAI raw transcription data to prevent stale data
+    if (window.__openAIRawTranscription) {
+      window.__openAIRawTranscription = {
+        sourceText: '',
+        translatedText: '',
+        isComplete: false,
+        isSourceComplete: false
+      };
+    }
+    
+    console.log('[OpenAI WebRTC] Connection cleaned up successfully');
   }, []);
 
   // Start listening
   const startListening = useCallback(async () => {
     try {
+      // Store start time to prevent auto-stop for a few seconds
+      (window as any).__openAIStartTime = Date.now();
+      
+      // NEW: Store current language settings for language detection
+      (window as any).__listenSourceLang = language?.split('-')[0] || 'en';
+      (window as any).__listenTargetLang = targetLanguage?.split('-')[0] || 'en';
+      
+      // First clean up any existing connections to ensure a fresh start
+      cleanupConnection();
+      
+      // Wake up audio context if it exists (helps with audio processing)
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+          const tempContext = new AudioContext();
+          // Create and play a short silent buffer to wake up the audio system
+          const buffer = tempContext.createBuffer(1, 1, 22050);
+          const source = tempContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(tempContext.destination);
+          source.start(0);
+          // Cleanup after a short delay
+          setTimeout(() => {
+            try {
+              tempContext.close();
+            } catch (e) {
+              // Ignore cleanup errors
+            }
+          }, 1000);
+          console.log('[OpenAI WebRTC] Audio context activated');
+        }
+      } catch (e) {
+        console.warn('[OpenAI WebRTC] Failed to wake audio context:', e);
+        // Non-critical, continue anyway
+      }
+      
       setError(null);
+      setIsConnecting(true);
+
+      // Reset transcript state
+      setTranscriptResult({ finalText: "", interimText: "", isFinal: false });
+      
+      // Reset OpenAI raw transcription data
+      window.__openAIRawTranscription = {
+        sourceText: '',
+        translatedText: '',
+        isComplete: false,
+        isSourceComplete: false
+      };
 
       // Create a new session
+      console.log("[OpenAI WebRTC] Creating new session...");
       const sessionCreated = await createRealtimeSession();
-      if (!sessionCreated) return;
+      if (!sessionCreated) {
+        console.error("[OpenAI WebRTC] Failed to create session");
+        setIsConnecting(false);
+        return false;
+      }
 
-      // Initialize WebRTC connection
-      const connectionInitialized = await initializeWebRTC();
-      if (!connectionInitialized) return;
+      // Initialize WebRTC connection with a timeout
+      console.log("[OpenAI WebRTC] Initializing WebRTC connection...");
+      
+      // Create a timeout promise that will reject after 10 seconds
+      const timeoutPromise = new Promise<boolean>((_, reject) => {
+        setTimeout(() => reject(new Error("WebRTC connection timed out")), 10000);
+      });
+      
+      // Try to initialize WebRTC with timeout
+      const connectionInitialized = await Promise.race([
+        initializeWebRTC(),
+        timeoutPromise
+      ]).catch(error => {
+        console.error("[OpenAI WebRTC] Connection timeout or error:", error);
+        return false;
+      });
+      
+      if (!connectionInitialized) {
+        console.error("[OpenAI WebRTC] Failed to initialize connection");
+        setIsConnecting(false);
+        cleanupConnection();
+        return false;
+      }
 
       // Reset transcript
       setTranscriptResult({ finalText: "", interimText: "", isFinal: false });
-
+      
+      // Set up a keepalive ping on the data channel to prevent premature closure
+      const keepaliveInterval = setInterval(() => {
+        if (dataChannel.current && dataChannel.current.readyState === 'open' && isListening) {
+          try {
+            // Send a tiny keepalive message
+            dataChannel.current.send(JSON.stringify({ type: 'keepalive_ping' }));
+            console.log('[OpenAI WebRTC] Sent keepalive ping');
+          } catch (e) {
+            console.error('[OpenAI WebRTC] Error sending keepalive:', e);
+          }
+        } else if (!isListening) {
+          // If we're no longer listening, clear the interval
+          clearInterval(keepaliveInterval);
+        }
+      }, 5000); // Every 5 seconds
+      
+      // Store the interval ID in window so we can clear it if needed
+      (window as any).__openAIKeepaliveInterval = keepaliveInterval;
+      
+      setIsConnecting(false);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Failed to start listening:', message);
+      console.error('[OpenAI WebRTC] Failed to start listening:', message);
       setError(`Failed to start listening: ${message}`);
       setIsListening(false);
+      setIsConnecting(false);
+      
+      // Make sure to clean up any partial connections
       cleanupConnection();
+      
+      // Special handling for common errors
+      if (message.includes('getUserMedia') || message.includes('Permission denied') || message.includes('NotAllowedError')) {
+        setError("Microphone access was denied. Please check your browser permissions and try again.");
+      }
+      
+      return false;
     }
   }, [createRealtimeSession, initializeWebRTC, cleanupConnection]);
 
   // Stop listening
   const stopListening = useCallback(() => {
+    // Print stack trace to debug what's calling this
+    console.log('[OpenAI WebRTC] stopListening called from:', new Error().stack);
+
+    // Only allow manual stopping, not auto-stopping
+    if (isConnecting) {
+      console.log('[OpenAI WebRTC] Not stopping during connection setup');
+      return;
+    }
+    
+    // Add a timestamp check to prevent multiple rapid stop calls
+    const now = Date.now();
+    const lastStopTime = (window as any).__lastOpenAIStopTime || 0;
+    if (now - lastStopTime < 1000) {
+      console.log('[OpenAI WebRTC] Ignoring rapid stop request');
+      return;
+    }
+    (window as any).__lastOpenAIStopTime = now;
+
+    // Check if we just started - prevent auto-stop within 5 seconds of starting
+    const startTime = (window as any).__openAIStartTime || 0;
+    if (now - startTime < 5000) {
+      console.log('[OpenAI WebRTC] Ignoring stop request within 5 seconds of starting');
+      return;
+    }
+    
+    console.log('[OpenAI WebRTC] Stopping listening and cleaning up');
+    
+    // First set the listening state to false so no auto-restart attempts happen
     setIsListening(false);
-    cleanupConnection();
-  }, [cleanupConnection]);
+    
+    // Reset any pending transcriptions
+    if (window.__openAIRawTranscription) {
+      // If we have valid transcript data, process it before cleaning up
+      const { sourceText, translatedText } = window.__openAIRawTranscription;
+      if (sourceText && translatedText && sourceText.trim() && translatedText.trim()) {
+        console.log('[OpenAI WebRTC] Processing final transcript before cleanup');
+        
+        // Try to extract the room ID
+        let roomId = 'unknown';
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlRoomId = urlParams.get('id');
+          if (urlRoomId) {
+            roomId = urlRoomId;
+          } else {
+            // Try to get from path
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts.length > 2) {
+              // Check if we're in a chat or listen page
+              if (pathParts.includes('chat') || pathParts.includes('listen')) {
+                const segmentType = pathParts.includes('chat') ? 'chat' : 'listen';
+                const segmentIndex = pathParts.indexOf(segmentType);
+                if (segmentIndex >= 0 && segmentIndex + 1 < pathParts.length) {
+                  roomId = pathParts[segmentIndex + 1];
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[OpenAI WebRTC] Error extracting room ID:", e);
+        }
+        
+        // Send final transcript to server if we have one
+        if (onTranslation) {
+          try {
+            onTranslation(sourceText, translatedText);
+          } catch (e) {
+            console.error('[OpenAI WebRTC] Error calling onTranslation:', e);
+          }
+        }
+        
+        try {
+          sendToServer(sourceText, translatedText, roomId);
+        } catch (e) {
+          console.error('[OpenAI WebRTC] Error sending to server:', e);
+        }
+      }
+    }
+    
+    // Add a small delay before cleaning up to allow any pending operations to complete
+    setTimeout(() => {
+      try {
+        // Clean up connections
+        cleanupConnection();
+      } catch (e) {
+        console.error('[OpenAI WebRTC] Error during cleanup:', e);
+      }
+    }, 100);
+  }, [cleanupConnection, onTranslation]);
 
   // Reset transcript
   const resetTranscript = useCallback(() => {
     setTranscriptResult({ finalText: "", interimText: "", isFinal: false });
+    
+    // Also reset the OpenAI transcription data
+    if (window.__openAIRawTranscription) {
+      window.__openAIRawTranscription = {
+        sourceText: '',
+        translatedText: '',
+        isComplete: false,
+        isSourceComplete: false
+      };
+    }
   }, []);
+
+  // Helper function to send messages to the server
+  const sendToServer = (sourceText: string, translatedText: string, roomId: string) => {
+    try {
+      // Check if we're in listen mode for specialized deduplication
+      const isListenPage = window.location.pathname.includes('/listen');
+      
+      // For listen mode, use a shared counter across all handlers to completely prevent duplication
+      if (isListenPage) {
+        // Create a message fingerprint
+        const messageKey = `${sourceText}-${translatedText}`;
+        
+        // Use a global cache for all listen mode messages
+        const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
+        
+        // Check if we've seen this message before in listen mode
+        if (processedMessages[messageKey]) {
+          console.log(`[OpenAI WebRTC] BLOCKING message already processed in listen mode:`, sourceText.substring(0, 30) + "...");
+          return;
+        }
+        
+        // Mark as processed (forever in this session)
+        processedMessages[messageKey] = true;
+        console.log(`[OpenAI WebRTC] First time processing this message in listen mode:`, sourceText.substring(0, 30) + "...");
+      } else {
+        // Regular chat mode uses a time-based deduplication window (2 seconds)
+        const deduplicationWindow = 2000;
+        
+        // Skip if we recently sent this exact message in chat mode
+        const lastSentTime = (window as any).__lastSentMessageTimestamp || 0;
+        const lastSentText = (window as any).__lastSentMessageText || '';
+        const now = Date.now();
+        
+        // Don't send duplicate messages within the deduplication window in chat mode
+        if (lastSentText === sourceText && (now - lastSentTime) < deduplicationWindow) {
+          console.log(`[OpenAI WebRTC] Skipping duplicate message send in chat mode:`, sourceText.substring(0, 30) + "...");
+          return;
+        }
+        
+        // Update last sent info for chat mode
+        (window as any).__lastSentMessageTimestamp = now;
+        (window as any).__lastSentMessageText = sourceText;
+      }
+      
+      // Check if we're on chat or listen page
+      const isChatPage = window.location.pathname.includes('/chat');
+      
+      // Get user info if available
+      const userId = (window as any).__userId || (window as any).__temp_user_uuid || 'unknown';
+      const userEmoji = (window as any).__userEmoji || (window as any).__user_emoji || '👤';
+      
+      // Send to WebSocket if needed
+      if ((isChatPage || isListenPage) && roomId !== 'unknown') {
+        const messageData = {
+          type: 'openai-transcription',
+          roomId,
+          sourceText,
+          translatedText,
+          sourceLang: language.split('-')[0], // Convert 'en-US' to 'en'
+          targetLang: targetLanguage.split('-')[0], // Convert 'ar-SA' to 'ar'
+          userId,
+          userEmoji,
+          timestamp: new Date().toISOString(),
+          isOpenAI: true  // Mark as OpenAI message for special rendering
+        };
+        
+        // Try to send via WebSocket first
+        const ws = (window as any).__minglWebSocket || (window as any).__chatWebSocket;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          console.log("[OpenAI WebRTC] Sending transcription via WebSocket");
+          ws.send(JSON.stringify(messageData));
+        } else {
+          // Fallback to HTTP endpoint
+          console.log("[OpenAI WebRTC] Sending transcription via HTTP");
+          fetch('/api/store-transcription', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(messageData)
+          }).catch(e => console.error("[OpenAI WebRTC] Error storing transcription:", e));
+        }
+      }
+    } catch (e) {
+      console.error("[OpenAI WebRTC] Error sending transcription:", e);
+    }
+  };
 
   return {
     isListening,

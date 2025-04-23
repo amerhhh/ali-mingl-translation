@@ -1,6 +1,10 @@
 import express, { type Request, Response, NextFunction } from "express";
+import 'dotenv/config';
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { storage } from "./storage";
+import { createDatabase } from "./database";
+import { createServer } from "http";
 
 const app = express();
 app.use(express.json());
@@ -37,7 +41,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const server = await registerRoutes(app);
+  // Initialize the database with the storage implementation
+  const db = createDatabase(storage);
+  
+  // Create the HTTP server
+  const httpServer = createServer(app);
+  
+  // Register routes with the server and database
+  const server = await registerRoutes(app, httpServer, db);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -56,14 +67,11 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
+  // ALWAYS serve the app on a different port to avoid conflicts
+  const port = 5001;
   server.listen({
     port,
-    host: "0.0.0.0",
-    reusePort: true,
+    host: "localhost",
   }, () => {
     log(`serving on port ${port}`);
   });

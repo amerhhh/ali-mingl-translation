@@ -16,7 +16,7 @@ export function useSpeechSynthesis() {
     }
   }, []);
 
-  const speak = useCallback((text: string, lang: string = 'en-US') => {
+  const speak = useCallback((text: string, lang: string = 'en-US', isManualPlayback: boolean = false) => {
     if (!('speechSynthesis' in window)) {
       console.error('Speech synthesis not supported');
       toast({
@@ -28,6 +28,60 @@ export function useSpeechSynthesis() {
     }
 
     try {
+      // ULTRA-AGGRESSIVE BLOCKING: Skip all non-target language speech in Listen mode
+      const isListenPage = window.location.pathname.includes('/listen');
+      const targetLang = (window as any).__listenTargetLang?.toLowerCase();
+      
+      if (isListenPage) {
+        // Get the language code and normalize it
+        const requestedLang = lang.toLowerCase();
+        
+        // Also check if this is marked as a target language request
+        const isTargetLangRequest = (window as any).__isTargetLanguageRequest === true;
+        
+        // In Listen mode, ONLY allow speech if:
+        // 1. The language EXACTLY matches the target language, AND
+        // 2. It's explicitly marked as a target language request
+        if (!isTargetLangRequest || targetLang !== requestedLang) {
+          console.log(`[STRICT BLOCKING] Blocking speech in Listen mode: lang=${requestedLang}, target=${targetLang}, isTargetRequest=${isTargetLangRequest}`);
+          setTimeout(() => { setIsSpeaking(false); }, 10);
+          return;
+        }
+        
+        console.log(`[STRICT ALLOW] Allowing speech in Listen mode: lang=${requestedLang}, target=${targetLang}`);
+      }
+
+      // Check if we're in Chat mode
+      const isChatPage = window.location.pathname.includes('/chat');
+      
+      // Check if this is an OpenAI message by looking for our global variable
+      const isOpenAIMessage = (window as any).__lastOpenAIMessage && 
+                             ((window as any).__lastOpenAIMessage.text === text || 
+                              (window as any).__lastOpenAIMessage.translatedText === text);
+      
+      // Check if playTargetLanguage is enabled (available as a global variable)
+      const playTargetLanguage = (window as any).__playTargetLanguage === true;
+      
+      // Log the values for debugging
+      console.log(`Speech check for auto-play: isChat=${isChatPage}, isOpenAI=${isOpenAIMessage}, isManual=${isManualPlayback}, playTargetEnabled=${playTargetLanguage}`);
+      
+      // Skip audio playback for OpenAI translations in Chat mode
+      // ONLY if this is automatic playback (not manual)
+      // AND if playTargetLanguage is not enabled
+      if (isChatPage && isOpenAIMessage && !isManualPlayback && !playTargetLanguage) {
+        console.log('Blocking automatic audio playback for OpenAI message in Chat mode (playTargetLanguage is off)');
+        // Still trigger onend to reset UI state
+        setTimeout(() => {
+          setIsSpeaking(false);
+        }, 100);
+        return;
+      }
+
+      // Always allow manual playback regardless of other settings
+      if (isManualPlayback) {
+        console.log('Manual playback requested - allowing audio regardless of other settings');
+      }
+      
       // Cancel any ongoing speech
       window.speechSynthesis.cancel();
 
