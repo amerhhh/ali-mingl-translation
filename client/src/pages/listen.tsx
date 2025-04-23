@@ -112,16 +112,6 @@ export default function Listen() {
   const currentRoomId = params?.id || roomIdFromQuery || '';
   const [, setLocation] = useLocation();
 
-  // Debug logs for tracking audio issues
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  
-  // Debug logging utility - moved to the top to avoid reference errors
-  const addDebugLog = useCallback((message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [...prev, `[${timestamp}] ${message}`]);
-    console.log(`[DEBUG] ${message}`);
-  }, []);
-
   const getInitialLanguages = () => {
     const deviceLang = navigator.language.split('-')[0].toLowerCase();
     if (deviceLang in supportedLanguages) {
@@ -229,43 +219,16 @@ export default function Listen() {
     }
   };
 
-  // For the Listen page, we only play target language translations
-  const handlePlayTranslation = useCallback((text: string, lang: LanguageCode, ignoreMainSpeaker: boolean = false) => {
+  // For the Listen page, we only want to play target language translations
+  const handlePlayTranslation = (text: string, lang: LanguageCode, ignoreMainSpeaker: boolean = false) => {
     if (!isInitialized) return;
     
     console.log(`Listen page: PlayTranslation called: text="${text.substring(0, 20)}...", lang=${lang}, ignoreMainSpeaker=${ignoreMainSpeaker}`);
 
-    // ONLY play if this matches the target language
-    if (lang.toLowerCase() === targetLang.toLowerCase()) {
-      addDebugLog(`👂 NUCLEAR: Setting flag for target language playback`);
-      
-      // Special nuclear approach - set the flag
-      (window as any).__isTargetLanguageRequest = true;
-      
-      try {
-        // Prepare the utterance directly
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = lang;
-        utterance.onend = () => {
-          addDebugLog(`✓ Target language playback complete`);
-        };
-        
-        // Use the nuclear-protected speak method
-        const synth = window.speechSynthesis;
-        if (synth) {
-          synth.cancel(); // Cancel any existing speech
-          synth.speak(utterance);
-        }
-      } finally {
-        // Reset the flag after a delay
-        setTimeout(() => {
-          (window as any).__isTargetLanguageRequest = false;
-        }, 100);
-      }
-    } else {
-      addDebugLog(`❌ NUCLEAR: Blocked source language playback attempt`);
-    }
-  }, [isInitialized, targetLang, addDebugLog]);
+    // MODIFIED: Prevent any playback in Listen mode
+    console.log(`Listen page: Playback is disabled in Listen mode`);
+    return;
+  };
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -273,361 +236,83 @@ export default function Listen() {
     }
   }, []);
 
-  // NUCLEAR OPTION: Completely control speech synthesis in Listen mode
+  // Debug logs for tracking audio issues
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  
+  // Debug logging utility
+  const addDebugLog = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [...prev, `[${timestamp}] ${message}`]);
+    console.log(`[DEBUG] ${message}`);
+  }, []);
+  
+  // ULTRA AGGRESSIVE FIX: COMPLETELY REPLACE THE SPEECH SYNTHESIS API
+  // This is our most aggressive solution to ensure only target language is heard
   useEffect(() => {
-    addDebugLog(`NUCLEAR OPTION: Taking complete control of speech synthesis`);
+    addDebugLog(`Setting up audio interceptor for target lang: ${targetLang}`);
     
     if ('speechSynthesis' in window) {
-      // 1. Cancel all current speech immediately
+      // Cancel any current speech
       window.speechSynthesis.cancel();
       
-      // 2. COMPLETELY REPLACE the speech synthesis interface
-      if (!(window as any)._originalSpeechMethods) {
-        // Store all original methods
-        (window as any)._originalSpeechMethods = {
-          speak: window.speechSynthesis.speak,
-          cancel: window.speechSynthesis.cancel,
-          pause: window.speechSynthesis.pause,
-          resume: window.speechSynthesis.resume
-        };
+      // Store the original speak function
+      const originalSpeak = window.speechSynthesis.speak;
+      (window.speechSynthesis as any)._originalSpeak = originalSpeak;
+      
+      // COMPLETELY override the speak function
+      window.speechSynthesis.speak = function(utterance: SpeechSynthesisUtterance) {
+        // Get the language from the utterance
+        const uttLang = utterance.lang?.toLowerCase() || '';
+        const targetLangCode = targetLang.toLowerCase();
         
-        // Create a mute audio context to prevent any sound
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.value = 0; // Set gain to 0 (mute)
-        gainNode.connect(audioCtx.destination);
+        // Add to debug logs
+        addDebugLog(`Speech request - text: "${utterance.text.substring(0, 20)}..." lang: ${uttLang}`);
         
-        // Enhanced language detection function that uses more sophisticated rules
-        const isLikelySourceLanguage = (text: string): boolean => {
-          // Nothing to check if text is empty
-          if (!text || text.trim() === '') return false;
-
-          // Get the current source language from window if available
-          const currentSourceLang = (window as any).__listenSourceLang || sourceLang || 'en';
-          
-          // Try to use server-side detection if available
-          const checkWithServer = async (textToCheck: string, lang: string) => {
-            try {
-              const response = await fetch('/api/detect-language', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  text: textToCheck,
-                  sourceLang: lang
-                })
-              });
-              
-              if (response.ok) {
-                const result = await response.json();
-                return result.isSourceLanguage;
-              }
-            } catch (e) {
-              console.error('Language detection API error:', e);
-            }
-            
-            // Fallback to client-side detection if server fails
-            return null;
-          };
-          
-          // Quick client-side detection for immediate decisions
-          // If source language is Arabic, check for Arabic characters
-          if (currentSourceLang === 'ar' && !/[\u0600-\u06FF]/.test(text)) {
-            addDebugLog(`Text doesn't contain Arabic characters, likely NOT in source language`);
-            return false; // Not likely source language
-          }
-          
-          // If source language is English, check for mostly Latin characters
-          if (currentSourceLang === 'en' && /^[a-zA-Z\s.,!?'"-]+$/.test(text)) {
-            addDebugLog(`Text contains mostly Latin characters, likely IN source language (English)`);
-            return true; // Likely source language
-          }
-
-          // Check for other source languages
-          if (currentSourceLang === 'es' && /[áéíóúüñ¿¡]/i.test(text)) {
-            addDebugLog(`Text contains Spanish characters, likely IN source language (Spanish)`);
-            return true;
-          }
-          
-          if (currentSourceLang === 'it' && /[àèéìòù]/i.test(text)) {
-            addDebugLog(`Text contains Italian characters, likely IN source language (Italian)`);
-            return true;
-          }
-          
-          // If we reach here, we're uncertain - default to allowing it
-          addDebugLog(`Uncertain language detection for "${text.substring(0, 30)}..."`);
-          return false;
-        };
-        
-        // Helper to determine if the text is likely in the target language
-        const isLikelyTargetLanguage = (text: string): boolean => {
-          if (!text || text.trim() === '') return false;
-          
-          // Get target language
-          const targetLangCode = (window as any).__listenTargetLang?.toLowerCase() || targetLang.toLowerCase();
-          
-          // Check specific language patterns
-          if (targetLangCode === 'ar' && /[\u0600-\u06FF]/.test(text)) {
-            addDebugLog(`Text contains Arabic characters, likely in target language (Arabic)`);
-            return true;
-          }
-          
-          if (targetLangCode === 'en' && /^[a-zA-Z\s.,!?'"-]+$/.test(text)) {
-            addDebugLog(`Text contains mostly Latin characters, likely in target language (English)`);
-            return true;
-          }
-          
-          if (targetLangCode === 'es' && /[áéíóúüñ¿¡]/i.test(text)) {
-            addDebugLog(`Text contains Spanish characters, likely in target language (Spanish)`);
-            return true;
-          }
-          
-          if (targetLangCode === 'it' && /[àèéìòù]/i.test(text)) {
-            addDebugLog(`Text contains Italian characters, likely in target language (Italian)`);
-            return true;
-          }
-          
-          return false;
-        };
-        
-        // 3. Replace ALL speech synthesis methods with controlled versions
-        window.speechSynthesis.speak = function(utterance: SpeechSynthesisUtterance) {
-          // Get the text content of the utterance for analysis
-          const text = utterance.text || '';
-          
-          // Skip empty texts
-          if (!text.trim()) {
-            addDebugLog('Empty text, skipping speech synthesis');
-            return;
-          }
-          
-          // STRICT CHECKS for target language
-          const isTargetLanguageRequest = (window as any).__isTargetLanguageRequest === true;
-          const targetLangCode = (window as any).__listenTargetLang?.toLowerCase() || targetLang.toLowerCase();
-          const utteranceLang = utterance.lang?.toLowerCase() || '';
-          
-          // Check if OpenAI is trying to speak both source and target language together
-          // (This is the key part to solve the issue)
-          if (text.includes('\n')) {
-            addDebugLog(`Detected multi-line text from OpenAI - likely contains both source and target`);
-            
-            // Split the text by line
-            const lines = text.split('\n').filter(line => line.trim() !== '');
-            
-            // If we have at least 2 lines, assume the first is source and the second is translation
-            if (lines.length >= 2) {
-              const sourceText = lines[0];
-              const translatedText = lines[1];
-              
-              addDebugLog(`Split text - Source: "${sourceText.substring(0, 30)}...""`);
-              addDebugLog(`Split text - Target: "${translatedText.substring(0, 30)}...""`);
-              
-              // Instead of the original utterance, create a new one with ONLY the translated text
-              const newUtterance = new SpeechSynthesisUtterance(translatedText);
-              newUtterance.lang = utterance.lang; // Keep the original language setting
-              
-              // Copy other properties
-              newUtterance.pitch = utterance.pitch;
-              newUtterance.rate = utterance.rate;
-              newUtterance.volume = utterance.volume;
-              newUtterance.voice = utterance.voice;
-              
-              // Copy event handlers
-              newUtterance.onboundary = utterance.onboundary;
-              newUtterance.onend = utterance.onend;
-              newUtterance.onerror = utterance.onerror;
-              newUtterance.onmark = utterance.onmark;
-              newUtterance.onpause = utterance.onpause;
-              newUtterance.onresume = utterance.onresume;
-              newUtterance.onstart = utterance.onstart;
-              
-              // Explicitly flag this as allowed target language content
-              (window as any).__isTargetLanguageRequest = true;
-              
-              // Speak only the translated text
-              addDebugLog(`✅ SPEAKING ONLY TRANSLATED TEXT: "${translatedText.substring(0, 30)}..."`);
-              (window as any)._originalSpeechMethods.speak.call(window.speechSynthesis, newUtterance);
-              
-              // Reset the flag after a delay
-              setTimeout(() => {
-                (window as any).__isTargetLanguageRequest = false;
-              }, 100);
-              
-              return;
-            }
-          }
-          
-          // Check if the text appears to be in the source language
-          const appearsToBeSourceLanguage = isLikelySourceLanguage(text);
-          
-          // Check if text is likely in target language for extra validation
-          const appearsToBeTargetLanguage = isLikelyTargetLanguage(text);
-          
-          if (appearsToBeSourceLanguage) {
-            addDebugLog(`🔍 TEXT ANALYSIS: Text appears to be in source language, blocking: "${text.substring(0, 30)}..."`);
-          }
-          
-          // Super strict check - ONLY allow if:
-          // 1. It's explicitly marked as a target language request, OR
-          // 2. The language code matches the target language, AND
-          // 3. The text appears to be in the target language 
-          // 4. The text doesn't appear to be in the source language
-          if ((isTargetLanguageRequest || appearsToBeTargetLanguage) && 
-              !appearsToBeSourceLanguage) {
-            addDebugLog(`✅ NUCLEAR APPROVED: Playing target language (${utteranceLang}): "${text.substring(0, 30)}..."`);
-            (window as any)._originalSpeechMethods.speak.call(window.speechSynthesis, utterance);
-          } else {
-            const reason = appearsToBeSourceLanguage ? "Text appears to be in source language" : 
-                         !isTargetLanguageRequest ? "Not target language request" : 
-                         !targetLangCode ? "No target language code set" :
-                         utteranceLang !== targetLangCode ? `Lang mismatch (${utteranceLang} vs ${targetLangCode})` :
-                         "Unknown reason";
-                         
-            addDebugLog(`❌ NUCLEAR BLOCKED: Speech blocked (${reason}): "${text.substring(0, 30)}..."`);
-            
-            // Simulate end event immediately
-            if (utterance.onend) {
-              const onEndHandler = utterance.onend;
-              setTimeout(() => {
-                const mockEvent = { utterance } as SpeechSynthesisEvent;
-                onEndHandler.call(utterance, mockEvent);
-              }, 10);
-            }
-          }
-        };
-        
-        // Replace other methods to ensure they work correctly
-        window.speechSynthesis.cancel = function() {
-          addDebugLog("Speech canceled");
-          (window as any)._originalSpeechMethods.cancel.call(window.speechSynthesis);
-        };
-        
-        window.speechSynthesis.pause = function() {
-          addDebugLog("Speech paused");
-          (window as any)._originalSpeechMethods.pause.call(window.speechSynthesis);
-        };
-        
-        window.speechSynthesis.resume = function() {
-          addDebugLog("Speech resumed");
-          (window as any)._originalSpeechMethods.resume.call(window.speechSynthesis);
-        };
-        
-        // EXTRA: Hijack the SpeechSynthesisUtterance constructor
-        const OriginalUtterance = window.SpeechSynthesisUtterance;
-        (window as any).SpeechSynthesisUtterance = function(text?: string) {
-          const utterance = new OriginalUtterance(text);
-          
-          // If we have text content, analyze it now to avoid processing later
-          if (text && typeof text === 'string') {
-            // Check if this is a multiline text (likely combined source and target)
-            if (text.includes('\n')) {
-              const lines = text.split('\n').filter(line => line.trim() !== '');
-              if (lines.length >= 2) {
-                // Only use the target text (second line) for speech
-                const translatedText = lines[1];
-                addDebugLog(`⚡ Intercepting multiline utterance creation - using only: "${translatedText.substring(0, 30)}..."`);
-                
-                // Replace the text with only the translation
-                // Note: This doesn't work in all browsers, so we still need the main interception
-                try {
-                  Object.defineProperty(utterance, 'text', {
-                    value: translatedText,
-                    writable: true
-                  });
-                } catch (e) {
-                  // Some browsers may not allow this property change
-                }
-              }
-            }
-            
-            // Add extra tracking to this utterance
-            (utterance as any)._textAnalysis = {
-              textLength: text.length,
-              appearsToBeSourceLanguage: isLikelySourceLanguage(text),
-              createdInListenMode: true
-            };
-            
-            // Log the analysis for debugging
-            if ((utterance as any)._textAnalysis.appearsToBeSourceLanguage) {
-              addDebugLog(`⚠️ Created utterance with likely source language text: "${text.substring(0, 30)}..."`);
-            }
-          }
-          
-          return utterance;
-        };
-        (window as any).SpeechSynthesisUtterance.prototype = OriginalUtterance.prototype;
-        
-        addDebugLog("🔒 NUCLEAR PROTECTION ACTIVE: Complete audio control installed with text analysis");
-      }
+        // ONLY allow if it explicitly matches target language
+        if (uttLang.includes(targetLangCode)) {
+          addDebugLog(`✓ ALLOWING target language speech (${uttLang})`);
+          originalSpeak.call(window.speechSynthesis, utterance);
+        } else {
+          addDebugLog(`✗ BLOCKING non-target language speech (${uttLang})`);
+          // DO NOTHING - completely block the speech
+        }
+      };
+      
+      addDebugLog("Speech synthesis interceptor installed");
     }
     
-    // Clean up when component unmounts
+    // Clean up when component unmounts or when target language changes
     return () => {
-      if ('speechSynthesis' in window && (window as any)._originalSpeechMethods) {
-        addDebugLog("Restoring original speech synthesis methods");
-        
-        // Restore original methods
-        window.speechSynthesis.speak = (window as any)._originalSpeechMethods.speak;
-        window.speechSynthesis.cancel = (window as any)._originalSpeechMethods.cancel;
-        window.speechSynthesis.pause = (window as any)._originalSpeechMethods.pause;
-        window.speechSynthesis.resume = (window as any)._originalSpeechMethods.resume;
-        
-        // Restore original constructor if we replaced it
-        if (window.SpeechSynthesisUtterance !== (window as any).OriginalUtterance) {
-          window.SpeechSynthesisUtterance = (window as any).OriginalUtterance;
-        }
-        
-        delete (window as any)._originalSpeechMethods;
-        
-        addDebugLog("Speech synthesis control removed");
+      if ('speechSynthesis' in window && (window.speechSynthesis as any)._originalSpeak) {
+        addDebugLog("Restoring original speech function");
+        window.speechSynthesis.speak = (window.speechSynthesis as any)._originalSpeak;
       }
     };
-  }, [addDebugLog, sourceLang, targetLang]);
+  }, [targetLang, addDebugLog]);
   
-  // Set up effect to play latest messages automatically using nuclear approach
+  // Set up effect to play latest messages automatically
   useEffect(() => {
     const latestMessage = messages[messages.length - 1];
     if (isInitialized && latestMessage && speakerEnabled) {
-      addDebugLog(`New message detected for auto-play: lang=${latestMessage.targetLang}`);
+      console.log("Listen page: New message detected, checking for playback:", latestMessage);
       
-      // Only auto-play if this is a target language message
+      // MODIFIED: Disable auto-playing of any recorded messages in Listen mode
+      // This ensures no recordings from the database are played
+      console.log("Listen page: Auto-playback of recorded messages is disabled in Listen mode");
+      return;
+
+      /* Original code disabled
+      // In Listen mode, always play the target language translation
       if (latestMessage.targetLang === targetLang) {
         // Use a slight delay to ensure the DOM has updated
         setTimeout(() => {
-          addDebugLog(`🔈 Auto-playing target language message with nuclear protection`);
-          
-          // Set the nuclear flag to allow playback
-          (window as any).__isTargetLanguageRequest = true;
-          
-          try {
-            // Create and configure utterance directly
-            const synth = window.speechSynthesis;
-            if (synth) {
-              // Cancel any existing speech
-              synth.cancel();
-              
-              // Create utterance manually to avoid any issues
-              const utterance = new SpeechSynthesisUtterance(latestMessage.translatedText);
-              utterance.lang = latestMessage.targetLang as string;
-              
-              // Play it through our protected system
-              synth.speak(utterance);
-            }
-          } catch (err) {
-            addDebugLog(`Error during auto-play: ${err}`);
-          } finally {
-            // Reset the flag after a delay
-            setTimeout(() => {
-              (window as any).__isTargetLanguageRequest = false;
-            }, 100);
-          }
+          console.log("Listen page: Playing latest message translation");
+          handlePlayTranslation(latestMessage.translatedText, latestMessage.targetLang as LanguageCode, true);
         }, 150);
-      } else {
-        addDebugLog(`⛔ Not auto-playing non-target language message`);
       }
+      */
     }
-  }, [messages, speakerEnabled, isInitialized, targetLang, addDebugLog]);
+  }, [messages, speakerEnabled, isInitialized, targetLang]);
 
   const copyRoomId = () => {
     if (currentRoomId) {
@@ -686,22 +371,6 @@ export default function Listen() {
     }
   };
 
-  // Immediately stop any speech when component mounts or language changes
-  useEffect(() => {
-    if ('speechSynthesis' in window) {
-      // Ensure all speech is canceled when loading listen page or changing languages
-      window.speechSynthesis.cancel();
-      addDebugLog("Canceled all speech on page load/language change");
-    }
-  }, [sourceLang, targetLang, addDebugLog]);
-  
-  // Set target language as a global variable for speech synthesis hook to access
-  useEffect(() => {
-    // Set global target language for speech synthesis to use
-    (window as any).__listenTargetLang = targetLang;
-    console.log(`Set global target language for Listen mode: ${targetLang}`);
-  }, [targetLang]);
-  
   // For Listen page - use target language for UI instead of source language
   useEffect(() => {
     // Use target language for UI in Listen mode
@@ -943,23 +612,6 @@ export default function Listen() {
                   <h2 className="text-lg font-semibold">{uiText.translationSettings}</h2>
                   <div className="flex items-center gap-2 sm:gap-4">
                     <div className="flex items-center gap-2">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex items-center gap-2">
-                              <Volume2 className="h-4 w-4 text-primary" />
-                              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                                {supportedLanguages[targetLang]?.english || targetLang}
-                              </span>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Only playing {supportedLanguages[targetLang]?.english || targetLang} audio</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <div className="flex items-center gap-2">
                       <Switch
                         checked={playTargetLanguage}
                         onCheckedChange={setPlayTargetLanguage}
@@ -1061,21 +713,24 @@ export default function Listen() {
                         </div>
                         <p className="text-foreground font-medium">{msg.translatedText}</p>
                         <div className="absolute top-2 right-2">
-                          {/* Re-enabled playback buttons in Listen mode */}
-                          {speakerEnabled && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              className="h-6 w-6 rounded-full"
-                              onClick={() => handlePlayTranslation(
-                                msg.translatedText, 
-                                msg.targetLang as LanguageCode,
-                                true
-                              )}
-                            >
-                              <Volume2 className="h-3 w-3" />
-                            </Button>
-                          )}
+                          {/* MODIFIED: Removed play button in Listen mode */}
+                          {/* No audio playback allowed in Listen mode */}
+                          {/* 
+                            {speakerEnabled && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                className="h-6 w-6 rounded-full"
+                                onClick={() => handlePlayTranslation(
+                                  msg.translatedText, 
+                                  msg.targetLang as LanguageCode,
+                                  true
+                                )}
+                              >
+                                <Volume2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          */}
                         </div>
                       </div>
                     ))}

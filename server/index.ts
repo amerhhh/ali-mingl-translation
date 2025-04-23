@@ -2,9 +2,6 @@ import express, { type Request, Response, NextFunction } from "express";
 import 'dotenv/config';
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { storage } from "./storage";
-import { createDatabase } from "./database";
-import { createServer } from "http";
 
 const app = express();
 app.use(express.json());
@@ -41,14 +38,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Initialize the database with the storage implementation
-  const db = createDatabase(storage);
-  
-  // Create the HTTP server
-  const httpServer = createServer(app);
-  
-  // Register routes with the server and database
-  const server = await registerRoutes(app, httpServer, db);
+  const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

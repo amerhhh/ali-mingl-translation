@@ -28,27 +28,15 @@ export function useSpeechSynthesis() {
     }
 
     try {
-      // ULTRA-AGGRESSIVE BLOCKING: Skip all non-target language speech in Listen mode
+      // Check if we're in Listen mode - if so, block all audio playback
       const isListenPage = window.location.pathname.includes('/listen');
-      const targetLang = (window as any).__listenTargetLang?.toLowerCase();
-      
       if (isListenPage) {
-        // Get the language code and normalize it
-        const requestedLang = lang.toLowerCase();
-        
-        // Also check if this is marked as a target language request
-        const isTargetLangRequest = (window as any).__isTargetLanguageRequest === true;
-        
-        // In Listen mode, ONLY allow speech if:
-        // 1. The language EXACTLY matches the target language, AND
-        // 2. It's explicitly marked as a target language request
-        if (!isTargetLangRequest || targetLang !== requestedLang) {
-          console.log(`[STRICT BLOCKING] Blocking speech in Listen mode: lang=${requestedLang}, target=${targetLang}, isTargetRequest=${isTargetLangRequest}`);
-          setTimeout(() => { setIsSpeaking(false); }, 10);
-          return;
-        }
-        
-        console.log(`[STRICT ALLOW] Allowing speech in Listen mode: lang=${requestedLang}, target=${targetLang}`);
+        console.log('Blocking all audio playback in Listen mode');
+        // Still trigger onend to reset UI state
+        setTimeout(() => {
+          setIsSpeaking(false);
+        }, 100);
+        return;
       }
 
       // Check if we're in Chat mode

@@ -27,6 +27,8 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const recognition = useRef<any>(null);
+  const restartAttempts = useRef(0);
+  const maxRestartAttempts = 3;
 
   // Get available audio devices
   const getAudioDevices = useCallback(async () => {
@@ -50,6 +52,32 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
     }
   }, []);
 
+  // Clear any existing recognition instance and create a new one
+  const createRecognitionInstance = useCallback(() => {
+    // Stop any existing instance
+    if (recognition.current) {
+      try {
+        recognition.current.stop();
+      } catch (e) {
+        console.log('Error stopping previous recognition instance:', e);
+      }
+    }
+
+    // Create a new instance
+    if ('webkitSpeechRecognition' in window) {
+      recognition.current = new (window as any).webkitSpeechRecognition();
+      recognition.current.continuous = true;
+      recognition.current.interimResults = true;
+      recognition.current.lang = language;
+      
+      console.log('Created new speech recognition instance with language:', language);
+      return true;
+    } else {
+      setError("Speech recognition is not supported in this browser");
+      return false;
+    }
+  }, [language]);
+
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window)) {
       setError("Speech recognition is not supported in this browser");
@@ -62,6 +90,14 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
     navigator.mediaDevices.addEventListener('devicechange', getAudioDevices);
     return () => {
       navigator.mediaDevices.removeEventListener('devicechange', getAudioDevices);
+      // Ensure we stop any active recognition when component unmounts
+      if (recognition.current) {
+        try {
+          recognition.current.stop();
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
+      }
     };
   }, [getAudioDevices]);
 
@@ -73,38 +109,29 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
     }
   }, [language]);
 
-  const startListening = useCallback(() => {
-    if (!('webkitSpeechRecognition' in window)) {
-      return;
-    }
-
-    // Create a new recognition instance
-    recognition.current = new (window as any).webkitSpeechRecognition();
-
-    // Configure recognition settings
-    recognition.current.continuous = true;
-    recognition.current.interimResults = true;
-    recognition.current.lang = language;
-
-    // Set audio source if deviceId is provided
-    if (deviceId) {
-      const constraints = {
-        audio: {
-          deviceId: { exact: deviceId }
-        }
-      };
-      recognition.current.mediaDevices = constraints;
-    }
-
+  // Setup recognition event handlers
+  const setupRecognitionHandlers = useCallback(() => {
+    if (!recognition.current) return;
+    
+    // Save for closure access
+    const currentFinalText = transcriptResult.finalText;
+    
     recognition.current.onstart = () => {
+      console.log('Speech recognition started in language:', language);
+      
+      // Set the start time to prevent early shutdown
+      (window as any).__webSpeechStartTime = Date.now();
+      
+      // Set the global marker 
+      (window as any).__webSpeechActive = true;
+      
       setIsListening(true);
       setError(null);
-      setTranscriptResult({ finalText: "", interimText: "", isFinal: false });
-      console.log('Speech recognition started in language:', language);
+      // Don't reset the transcript here to avoid losing previous text
     };
 
     recognition.current.onresult = (event: any) => {
-      let finalText = transcriptResult.finalText;
+      let finalText = currentFinalText;
       let interimText = '';
 
       for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -125,33 +152,238 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
 
     recognition.current.onerror = (event: any) => {
       console.error('Speech recognition error:', event);
+      
+      // Handle no-speech errors - don't stop listening
+      if (event.error === 'no-speech') {
+        console.log('No speech detected, but continuing to listen...');
+        
+        // Don't restart immediately for no-speech errors, just continue
+        return;
+      }
+      
+      // Handle abort errors
+      if (event.error === 'aborted') {
+        console.log('Speech recognition was aborted, attempting to restart...');
+        
+        // Increment restart counter
+        restartAttempts.current += 1;
+        
+        // Don't try to restart too many times
+        if (restartAttempts.current > maxRestartAttempts) {
+          console.error('Exceeded maximum restart attempts, giving up');
+          setError('Speech recognition failed after multiple restart attempts');
+          setIsListening(false);
+          return;
+        }
+        
+        // Wait a moment before restarting
+        setTimeout(() => {
+          if (isListening) {
+            try {
+              // Create a new instance and restart
+              if (createRecognitionInstance()) {
+                setupRecognitionHandlers();
+                recognition.current.start();
+                console.log('Successfully restarted speech recognition after abort');
+              }
+            } catch (e) {
+              console.error('Failed to restart recognition after abort:', e);
+              setError('Failed to restart speech recognition');
+              setIsListening(false);
+            }
+          }
+        }, 300);
+        
+        return;
+      }
+      
+      // For other errors, show error and stop listening
       setError(`Speech recognition error: ${event.error}`);
       setIsListening(false);
     };
 
     recognition.current.onend = () => {
-      console.log('Speech recognition ended');
-      setIsListening(false);
+      console.log('Speech recognition ended, checking if we should restart');
+      
+      // Get the current time to compare with start time
+      const now = Date.now();
+      const startTime = (window as any).__webSpeechStartTime || 0;
+      
+      // If recognition ended within 2 seconds of starting, it's likely an error
+      // or automatic shutdown - try to restart it
+      const justStarted = (now - startTime < 2000);
+      
+      // Check if we should still be active
+      const isStillActive = (window as any).__webSpeechActive === true;
+      
+      console.log(`WebSpeech onend - justStarted: ${justStarted}, isStillActive: ${isStillActive}, isListening: ${isListening}`);
+      
+      // Don't actually end recognition if:
+      // 1. The global marker indicates we should be active
+      // 2. We're still supposed to be listening according to local state
+      // 3. We just started (within last 2 seconds)
+      // 4. We haven't exceeded max restart attempts
+      const shouldRestart = (isStillActive || isListening || justStarted) && 
+                            restartAttempts.current < maxRestartAttempts;
+      
+      // If we're still supposed to be listening, try to restart
+      if (shouldRestart) {
+        console.log('Recognition ended but should be listening. Attempting to restart...');
+        
+        if (!justStarted) {
+          restartAttempts.current += 1;
+        }
+        
+        setTimeout(() => {
+          try {
+            if ((window as any).__webSpeechActive) {
+              recognition.current.start();
+              console.log('Successfully restarted recognition after end event');
+            } else {
+              console.log('Not restarting since recognition is no longer active');
+            }
+          } catch (e) {
+            console.error('Failed to restart recognition after end:', e);
+            // Only set listening to false if we've exceeded retry attempts
+            if (restartAttempts.current >= maxRestartAttempts) {
+              setIsListening(false);
+              (window as any).__webSpeechActive = false;
+            }
+          }
+        }, 300);
+      } else {
+        // Only set isListening to false if we're not trying to restart
+        // AND we're not within the protected startup period
+        if (!justStarted) {
+          console.log('Recognition ended and not restarting');
+          setIsListening(false);
+          (window as any).__webSpeechActive = false;
+        }
+      }
     };
+  }, [language, isListening, transcriptResult.finalText, createRecognitionInstance]);
 
-    // Start recognition
+  const startListening = useCallback(() => {
+    if (!('webkitSpeechRecognition' in window)) {
+      setError("Speech recognition is not supported in this browser");
+      return false;
+    }
+
     try {
+      // Store start time to prevent auto-stop for a few seconds
+      const now = Date.now();
+      (window as any).__webSpeechStartTime = now;
+      (window as any).__webSpeechActive = true;
+      console.log(`WebSpeech starting at ${now}, marked as active globally`);
+
+      // Reset restart counter
+      restartAttempts.current = 0;
+      
+      // Set to listening state immediately to update UI
+      setIsListening(true);
+      
+      // Create a fresh recognition instance
+      if (!createRecognitionInstance()) {
+        setIsListening(false); // Reset if instance creation fails
+        return false;
+      }
+      
+      // Set audio source if deviceId is provided
+      if (deviceId) {
+        const constraints = {
+          audio: {
+            deviceId: { exact: deviceId }
+          }
+        };
+        recognition.current.mediaDevices = constraints;
+      }
+      
+      // Set up event handlers
+      setupRecognitionHandlers();
+      
+      // Prevent accidental cleanup
+      (window as any).__webSpeechJustStarted = true;
+      
+      // Set a timer to clear the flag
+      setTimeout(() => {
+        (window as any).__webSpeechJustStarted = false;
+      }, 2000);
+      
+      // Start recognition
       recognition.current.start();
       console.log('Started speech recognition');
+      return true;
     } catch (error) {
       console.error('Failed to start speech recognition:', error);
       setError('Failed to start speech recognition. Please try again.');
       setIsListening(false);
+      return false;
     }
-  }, [language, deviceId, transcriptResult.finalText]);
+  }, [language, deviceId, createRecognitionInstance, setupRecognitionHandlers]);
 
   const stopListening = useCallback(() => {
+    // Print stack trace to debug what's calling this
+    console.log('WebSpeech stopListening called from:', new Error().stack);
+
+    // Check if this stop request is coming from a language change effect
+    // React internal effects have a specific stack signature
+    const isFromEffectCleanup = new Error().stack?.includes('commitHookEffectListMount');
+    
+    // If from effect cleanup and other conditions are met, we may want to ignore
+    if (isFromEffectCleanup) {
+      console.log('Stop request coming from React effect cleanup - checking if we should ignore');
+      
+      // Check if we've recently started - if so, ignore the stop request
+      const now = Date.now();
+      const startTime = (window as any).__webSpeechStartTime || 0;
+      if (now - startTime < 5000) {
+        console.log('Ignoring WebSpeech stop request from effect within 5 seconds of starting');
+        return;
+      }
+      
+      // Check if the global marker indicates we should be active
+      if ((window as any).__webSpeechActive === true) {
+        console.log('Ignoring effect cleanup stop request because __webSpeechActive is true');
+        return;
+      }
+    }
+
+    // Add a timestamp check to prevent multiple rapid stop calls
+    const now = Date.now();
+    const lastStopTime = (window as any).__lastWebSpeechStopTime || 0;
+    if (now - lastStopTime < 1000) {
+      console.log('Ignoring rapid WebSpeech stop request');
+      return;
+    }
+    (window as any).__lastWebSpeechStopTime = now;
+
+    // Check if we just started - prevent auto-stop within 3 seconds of starting
+    const startTime = (window as any).__webSpeechStartTime || 0;
+    if (now - startTime < 3000) {
+      console.log('Ignoring WebSpeech stop request within 3 seconds of starting');
+      return;
+    }
+
+    // Only stop if we're actually listening according to our tracking
+    if (!(window as any).__webSpeechActive && !isListening) {
+      console.log('Not stopping WebSpeech since it is not active');
+      return;
+    }
+
+    console.log('Actually stopping WebSpeech recognition');
+    restartAttempts.current = maxRestartAttempts; // Prevent auto-restart
+    (window as any).__webSpeechActive = false; // Mark as inactive globally
+    
     if (recognition.current) {
-      recognition.current.stop();
-      console.log('Stopped speech recognition');
+      try {
+        recognition.current.stop();
+        console.log('Stopped speech recognition');
+      } catch (e) {
+        console.error('Error stopping recognition:', e);
+      }
     }
     setIsListening(false);
-  }, []);
+  }, [isListening]);
 
   const resetTranscript = useCallback(() => {
     setTranscriptResult({ finalText: "", interimText: "", isFinal: false });

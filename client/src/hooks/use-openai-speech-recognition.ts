@@ -519,42 +519,6 @@ export function useOpenAISpeechRecognition({
                       // Use a shared global cache for listen mode messages
                       const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
                       
-                      // NEW: Additional language detection for listen mode
-                      const isLikelySourceLanguage = (() => {
-                        // Get the current source language from window if available
-                        const currentSourceLang = (window as any).__listenSourceLang || language?.split('-')[0] || 'en';
-                        
-                        // If source language is Arabic, check for Arabic characters
-                        if (currentSourceLang === 'ar' && !/[\u0600-\u06FF]/.test(sourceText)) {
-                          console.log(`[OpenAI WebRTC] Source text doesn't contain Arabic characters, likely in source language`);
-                          return true;
-                        }
-                        
-                        // If source language is English, check for mostly Latin characters
-                        if (currentSourceLang === 'en' && /^[a-zA-Z\s.,!?'"-]+$/.test(sourceText)) {
-                          console.log(`[OpenAI WebRTC] Source text appears to be in English, blocking in listen mode`);
-                          return true;
-                        }
-                        
-                        // Add more language checks as needed
-                        return false;
-                      })();
-                      
-                      // Check if this appears to be source language content in listen mode
-                      if (isLikelySourceLanguage) {
-                        console.log(`[OpenAI WebRTC] BLOCKING source language content in listen mode:`, sourceText.substring(0, 30) + "...");
-                        
-                        // Reset transcript to prevent further processing attempts
-                        window.__openAIRawTranscription = {
-                          sourceText: '',
-                          translatedText: '',
-                          isComplete: false,
-                          isSourceComplete: false
-                        };
-                        
-                        return;
-                      }
-                      
                       // Check if we've seen this message before in listen mode
                       if (processedMessages[messageKey]) {
                         console.log(`[OpenAI WebRTC] BLOCKING duplicate transcript after speech stopped in listen mode:`, sourceText.substring(0, 30) + "...");
@@ -573,10 +537,6 @@ export function useOpenAISpeechRecognition({
                       // Mark it as processed to prevent duplicate processing elsewhere
                       processedMessages[messageKey] = true;
                       console.log(`[OpenAI WebRTC] First time processing transcript after speech stopped in listen mode:`, sourceText.substring(0, 30) + "...");
-                      
-                      // NEW: Explicitly flag this as target language content for speech synthesis
-                      (window as any).__isTargetLanguageRequest = true;
-                      (window as any).__listenTargetLang = targetLanguage?.split('-')[0] || 'en';
                     }
                     
                     // Call the callback with the final transcript
@@ -622,33 +582,6 @@ export function useOpenAISpeechRecognition({
                         // Use a shared global cache for listen mode messages
                         const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
                         
-                        // NEW: Additional language detection for listen mode
-                        const isLikelySourceLanguage = (() => {
-                          // Get the current source language from window if available
-                          const currentSourceLang = (window as any).__listenSourceLang || language?.split('-')[0] || 'en';
-                          
-                          // If source language is Arabic, check for Arabic characters
-                          if (currentSourceLang === 'ar' && !/[\u0600-\u06FF]/.test(sourceText)) {
-                            console.log(`[OpenAI WebRTC] Output item: Source text doesn't contain Arabic characters, likely source language`);
-                            return true;
-                          }
-                          
-                          // If source language is English, check for mostly Latin characters
-                          if (currentSourceLang === 'en' && /^[a-zA-Z\s.,!?'"-]+$/.test(sourceText)) {
-                            console.log(`[OpenAI WebRTC] Output item: Source text appears to be in English, blocking in listen mode`);
-                            return true;
-                          }
-                          
-                          // Add more language checks as needed
-                          return false;
-                        })();
-                        
-                        // Check if this appears to be source language content
-                        if (isLikelySourceLanguage) {
-                          console.log(`[OpenAI WebRTC] BLOCKING source language content in output item:`, sourceText.substring(0, 30) + "...");
-                          return;
-                        }
-                        
                         // Check if we've seen this message before in listen mode
                         if (processedMessages[messageKey]) {
                           console.log(`[OpenAI WebRTC] BLOCKING duplicate item output in listen mode:`, sourceText.substring(0, 30) + "...");
@@ -659,10 +592,6 @@ export function useOpenAISpeechRecognition({
                         // The sendToServer function will also check this same registry
                         processedMessages[messageKey] = true;
                         console.log(`[OpenAI WebRTC] First time processing this output item in listen mode:`, sourceText.substring(0, 30) + "...");
-                        
-                        // NEW: Explicitly flag this as target language content for speech synthesis
-                        (window as any).__isTargetLanguageRequest = true;
-                        (window as any).__listenTargetLang = targetLanguage?.split('-')[0] || 'en';
                       } else {
                         // In chat mode, use the regular time-based deduplication
                         const lastProcessedTime = (window as any).__lastProcessedTimestamp || 0;
@@ -1034,10 +963,6 @@ export function useOpenAISpeechRecognition({
     try {
       // Store start time to prevent auto-stop for a few seconds
       (window as any).__openAIStartTime = Date.now();
-      
-      // NEW: Store current language settings for language detection
-      (window as any).__listenSourceLang = language?.split('-')[0] || 'en';
-      (window as any).__listenTargetLang = targetLanguage?.split('-')[0] || 'en';
       
       // First clean up any existing connections to ensure a fresh start
       cleanupConnection();

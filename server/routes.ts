@@ -7,9 +7,6 @@ import { translations, type Translation, insertTranslationSchema } from "@shared
 import { translateText, translateUIText, createRealtimeSpeechSession } from "./openai";
 import { ZodError } from "zod";
 import { customAlphabet } from 'nanoid';
-import { Database } from './database';
-import { v4 as uuidv4 } from 'uuid';
-import { supportedLanguages } from '@shared/schema';
 
 // Create a custom nanoid generator with only uppercase letters and numbers
 const generateRoomId = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 3);
@@ -30,59 +27,9 @@ function broadcast(roomId: string, message: any, exclude?: WebSocket) {
   }
 }
 
-// Language detection helper function (used by the language detection endpoint)
-export function detectLanguage(text: string, sourceLang: string): {isSourceLanguage: boolean, confidence: number} {
-  // Default result
-  let result = {
-    isSourceLanguage: false,
-    confidence: 0
-  };
-  
-  // If source language is Arabic, check for Arabic characters
-  if (sourceLang === 'ar') {
-    // Check if the text contains Arabic characters
-    const hasArabicChars = /[\u0600-\u06FF]/.test(text);
-    // If it doesn't have Arabic chars, it's likely not Arabic (the source language)
-    result = {
-      isSourceLanguage: hasArabicChars,
-      confidence: hasArabicChars ? 0.9 : 0.8
-    };
-  }
-  // If source language is English, check for Latin characters
-  else if (sourceLang === 'en') {
-    // Check if the text contains mostly Latin characters
-    const isEnglishLike = /^[a-zA-Z\s.,!?'"-]+$/.test(text);
-    result = {
-      isSourceLanguage: isEnglishLike,
-      confidence: isEnglishLike ? 0.9 : 0.7
-    };
-  }
-  // Add more language detection rules as needed
-  else if (sourceLang === 'es') {
-    // Spanish contains characters like ñ, accented vowels, etc.
-    const hasSpanishChars = /[áéíóúüñ¿¡]/i.test(text);
-    const hasSpanishStructure = /\b(el|la|los|las|un|una|unos|unas|y|o|pero|porque|que|como|cuando|donde|si)\b/i.test(text);
-    result = {
-      isSourceLanguage: hasSpanishChars || hasSpanishStructure,
-      confidence: (hasSpanishChars && hasSpanishStructure) ? 0.9 : (hasSpanishChars || hasSpanishStructure ? 0.7 : 0.5)
-    };
-  }
-  else if (sourceLang === 'it') {
-    // Italian contains characters and common words
-    const hasItalianChars = /[àèéìòù]/i.test(text);
-    const hasItalianStructure = /\b(il|lo|la|i|gli|le|un|uno|una|e|o|ma|perché|che|come|quando|dove|se)\b/i.test(text);
-    result = {
-      isSourceLanguage: hasItalianChars || hasItalianStructure,
-      confidence: (hasItalianChars && hasItalianStructure) ? 0.9 : (hasItalianChars || hasItalianStructure ? 0.7 : 0.5)
-    };
-  }
-  
-  return result;
-}
-
-export async function registerRoutes(app: Express, server: Server, db: Database): Promise<Server> {
-  // Use the provided server instead of creating a new one
-  const httpServer = server || createServer(app);
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Create HTTP server first
+  const httpServer = createServer(app);
 
   // WebSocket server setup with direct server and path configuration
   const wss = new WebSocketServer({ 
@@ -733,31 +680,5 @@ export async function registerRoutes(app: Express, server: Server, db: Database)
     }
   });
 
-  // Language detection endpoint
-  app.post('/api/detect-language', async (req, res) => {
-    try {
-      const { text, sourceLang } = req.body;
-      
-      if (!text || !sourceLang) {
-        return res.status(400).json({ error: 'Missing required fields' });
-      }
-      
-      // Use the language detection function
-      const result = detectLanguage(text, sourceLang);
-      
-      // Return the detection result
-      return res.json({
-        text,
-        sourceLang,
-        isSourceLanguage: result.isSourceLanguage,
-        confidence: result.confidence
-      });
-    } catch (error) {
-      console.error('Language detection error:', error);
-      return res.status(500).json({ error: 'Failed to detect language' });
-    }
-  });
-
-  // Return the server that was used
   return httpServer;
 }

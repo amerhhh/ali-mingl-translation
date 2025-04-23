@@ -121,9 +121,6 @@ export async function createRealtimeSpeechSession(sourceLang: string, targetLang
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     
-    // Check if this is a listen mode request (source and target are different)
-    const isListenMode = sourceLang !== targetLang;
-    
     // Set up configuration for the real-time speech session
     const sessionConfig = {
       // Model selection
@@ -156,28 +153,15 @@ export async function createRealtimeSpeechSession(sourceLang: string, targetLang
       // Modalities
       modalities: ["text", "audio"],
       
-      // Instructions - Using consistent language mapping for models
-      instructions: isListenMode 
-        ? `You are a real-time translator. 
+      // Translation instructions - Using consistent language mapping for models
+      instructions: `You are a real-time translator. 
       
-          Listen to the input audio and provide both the original text and the translation for the text responses. Be accurate and concise in your translations.
-          
-          IMPORTANT: For audio responses, ONLY speak the translated text in the target language (${getLanguageForOpenAI(targetLang)}). Do NOT speak the original text in the source language (${getLanguageForOpenAI(sourceLang)}).
-          
-          Source language: ${getLanguageForOpenAI(sourceLang)}
-          Target language: ${getLanguageForOpenAI(targetLang)}
-          
-          When providing text responses, always format them so that the original text appears first, followed by the translation on a new line, so the client can parse them correctly.
-          
-          But remember, in your spoken audio responses, ONLY speak the translated text, not the original.`
-        : `You are a real-time translator. 
+      Listen to the input audio and provide both the original text and the translation. Be accurate and concise in your translations. 
       
-          Listen to the input audio and provide both the original text and the translation. Be accurate and concise in your translations. 
-          
-          Source language: ${getLanguageForOpenAI(sourceLang)}
-          Target language: ${getLanguageForOpenAI(targetLang)}
-          
-          Always format your response so that the original text appears first, followed by the translation on a new line.`
+      Source language: ${getLanguageForOpenAI(sourceLang)}
+      Target language: ${getLanguageForOpenAI(targetLang)}
+      
+      Always format your response so that the original text appears first, followed by the translation on a new line.`
     };
 
     // Request the ephemeral key from OpenAI with translation config

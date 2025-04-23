@@ -24,13 +24,14 @@ interface Message {
   temp_user_uuid: string;
   user_emoji: UserEmoji;
   voiceType?: string;
+  isOpenAI?: boolean;
 }
 
 interface ChatRoom {
   messages: Message[];
   isConnected: boolean;
   isConnecting: boolean;
-  sendMessage: (text: string, sourceLang: string, targetLang: string) => void;
+  sendMessage: (text: string, sourceLang: string, targetLang: string, existingTranslation?: string) => void;
   reconnect: () => void;
   clearMessages: () => void;
   userEmoji: UserEmoji;
@@ -108,7 +109,13 @@ export function useChatRoom(roomId: string): ChatRoom {
           }
         }
 
-        setMessages(parsedMessages);
+        // Only set messages if they're empty, to prevent duplicates when switching modes
+        setMessages(prevMessages => {
+          if (prevMessages.length === 0) {
+            return parsedMessages;
+          }
+          return prevMessages;
+        });
       }
     } catch (error) {
       console.error('Failed to load stored messages:', error);
@@ -133,6 +140,7 @@ export function useChatRoom(roomId: string): ChatRoom {
     initializeChatRoom();
 
     return () => {
+      console.log('Cleaning up chat room hook');
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
       }
@@ -143,6 +151,9 @@ export function useChatRoom(roomId: string): ChatRoom {
       // Clear global references on unmount
       (window as any).__chatWebSocket = null;
       (window as any).__chatWebSocketReady = false;
+      
+      // We don't clear messages here because we want to preserve them when switching modes
+      // The duplicate prevention happens in the message handlers
     };
   }, []);
 
@@ -203,9 +214,18 @@ export function useChatRoom(roomId: string): ChatRoom {
               if (message.success) {
                 console.log('Successfully joined room:', message.roomId);
                 if (message.history && Array.isArray(message.history)) {
-                  console.log('Setting room history:', message.history);
-                  setMessages(message.history);
-                  localStorage.setItem(`messages_${roomId}`, JSON.stringify(message.history));
+                  console.log('Received room history:', message.history);
+                  // Only set messages from history if we don't already have them
+                  setMessages(prevMessages => {
+                    // If we already have messages (from localStorage or previous connection), don't replace them
+                    if (prevMessages.length > 0) {
+                      console.log('Already have messages, not replacing from server history');
+                      return prevMessages;
+                    }
+                    console.log('Setting messages from server history');
+                    localStorage.setItem(`messages_${roomId}`, JSON.stringify(message.history));
+                    return message.history;
+                  });
                 }
               }
               break;
@@ -219,11 +239,64 @@ export function useChatRoom(roomId: string): ChatRoom {
                 timestamp: message.timestamp,
                 temp_user_uuid: message.temp_user_uuid || userId, // Use sender's UUID if not provided
                 user_emoji: message.user_emoji || userEmoji, // Use sender's emoji if not provided
-                voiceType: message.voiceType || "female" // Use provided voice type or default to female
+                voiceType: message.voiceType || "female", // Use provided voice type or default to female
+                isOpenAI: message.isOpenAI
               };
-              console.log('Adding new message to chat:', newMessage);
+              console.log('Adding new message to chat:', { 
+                ...newMessage, 
+                isOpenAI: !!message.isOpenAI,
+                text: newMessage.text.substring(0, 30) + '...',
+                translatedText: newMessage.translatedText.substring(0, 30) + '...'
+              });
               setMessages(prev => {
+                // Check if this message is already in the list to prevent duplicates
+                const isDuplicate = prev.some(
+                  msg => 
+                    msg.text === newMessage.text && 
+                    msg.timestamp === newMessage.timestamp &&
+                    msg.temp_user_uuid === newMessage.temp_user_uuid
+                );
+                
+                if (isDuplicate) {
+                  console.log('Duplicate message detected, not adding again');
+                  return prev;
+                }
+                
                 const updated = [...prev, newMessage];
+                localStorage.setItem(`messages_${roomId}`, JSON.stringify(updated));
+                return updated;
+              });
+              break;
+
+            case 'openai-transcription':
+              // Handle OpenAI transcriptions coming directly from the WebRTC data channel
+              const openAIMessage = {
+                text: message.sourceText,
+                translatedText: message.translatedText,
+                sourceLang: message.sourceLang || 'en',
+                targetLang: message.targetLang || 'en',
+                timestamp: message.timestamp || new Date().toISOString(),
+                temp_user_uuid: message.userId || userId,
+                user_emoji: message.userEmoji || userEmoji,
+                voiceType: "female",
+                isOpenAI: true // Mark as OpenAI message for special display
+              };
+              console.log('Adding new OpenAI transcription to chat:', openAIMessage);
+              setMessages(prev => {
+                // Check if this message is already in the list to prevent duplicates
+                const isDuplicate = prev.some(
+                  msg => 
+                    msg.text === openAIMessage.text && 
+                    msg.timestamp === openAIMessage.timestamp &&
+                    msg.temp_user_uuid === openAIMessage.temp_user_uuid
+                );
+                
+                if (isDuplicate) {
+                  console.log('Duplicate OpenAI transcription detected, not adding again');
+                  return prev;
+                }
+                
+                const updated = [...prev, openAIMessage];
                 localStorage.setItem(`messages_${roomId}`, JSON.stringify(updated));
                 return updated;
               });
@@ -279,11 +352,19 @@ export function useChatRoom(roomId: string): ChatRoom {
   const sendMessage = useCallback(async (
     text: string,
     sourceLang: string,
-    targetLang: string
+    targetLang: string,
+    existingTranslation?: string
   ) => {
     if (!text.trim() || !roomId) return;
 
-    console.log('Attempting to send message:', { text, sourceLang, targetLang, roomId, userId });
+    console.log('Attempting to send message:', { 
+      text: text.substring(0, 30) + '...', 
+      sourceLang, 
+      targetLang, 
+      roomId, 
+      userId,
+      hasTranslation: !!existingTranslation
+    });
 
     try {
       if (socket?.readyState === WebSocket.OPEN) {
@@ -295,8 +376,20 @@ export function useChatRoom(roomId: string): ChatRoom {
           roomId,
           temp_user_uuid: userId,
           user_emoji: userEmoji,
-          voiceType: "female" // Default to female voice
+          voiceType: "female", // Default to female voice
+          isOpenAI: false // Default to false, will be overridden for pre-translated messages
         };
+
+        // If we already have a translation, include it
+        if (existingTranslation) {
+          Object.assign(chatMessage, {
+            translatedText: existingTranslation,
+            isOpenAI: true // Mark as OpenAI-style message to get the same UI format
+          });
+          console.log('Including existing translation in message:', existingTranslation.substring(0, 30) + '...');
+          console.log('Setting isOpenAI=true for proper display formatting with source and translation');
+        }
+
         console.log('Sending message through WebSocket:', chatMessage);
         socket.send(JSON.stringify(chatMessage));
       } else {
@@ -315,10 +408,12 @@ export function useChatRoom(roomId: string): ChatRoom {
 
   const clearMessages = useCallback(() => {
     if (!roomId) return;
-
+    
+    console.log('Clearing all messages');
     setMessages([]);
     localStorage.removeItem(`messages_${roomId}`);
-
+    
+    // Send clear-room message to server if connected
     if (socket?.readyState === WebSocket.OPEN) {
       const clearMessage = {
         type: 'clear_room',
@@ -329,13 +424,25 @@ export function useChatRoom(roomId: string): ChatRoom {
   }, [socket, roomId]);
 
   const reconnect = useCallback(() => {
+    console.log('Manually reconnecting...');
+    
+    // When manually reconnecting, we should keep the existing messages to prevent duplicates
+    // We don't need to clear or reload messages here
+    
+    // Reset reconnection attempts counter
     reconnectAttempts.current = 0;
+    
+    // Set connecting state
     setIsConnecting(true);
+    
+    // Close existing socket if open
     if (socket?.readyState === WebSocket.OPEN) {
       socket.close();
     }
+    
+    // Attempt to connect
     connect();
-  }, [socket, connect]);
+  }, [connect, socket]);
 
   // Store emoji whenever it changes
   useEffect(() => {

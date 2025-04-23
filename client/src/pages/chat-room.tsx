@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -99,6 +99,11 @@ export default function ChatRoom() {
   const currentRoomId = params?.id || roomIdFromQuery || '';
   const [, setLocation] = useLocation();
 
+  // Initialize global variables for cross-component communication
+  useEffect(() => {
+    (window as any).__playTargetLanguage = playTargetLanguage; // Initialize with current state value
+  }, []);
+
   const getInitialLanguages = () => {
     const deviceLang = navigator.language.split('-')[0].toLowerCase();
     if (deviceLang in supportedLanguages) {
@@ -138,6 +143,10 @@ export default function ChatRoom() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [showIosNotice, setShowIosNotice] = useState(false);
   const [showArabicNotice, setShowArabicNotice] = useState(false);
+  // Add a ref to track which messages have been played
+  const playedMessageIds = useRef<Set<string>>(new Set());
+  // Track when a new message is added to accurately detect NEW messages
+  const messagesLengthRef = useRef(0);
 
   const { toast } = useToast();
   const { speak, isSpeaking, isInitialized } = useSpeechSynthesis();
@@ -177,7 +186,10 @@ export default function ChatRoom() {
   }, [currentRoomId]);
 
   const handleTranscript = async (text: string, isFinal: boolean) => {
+    console.log(`handleTranscript called with text: "${text?.substring(0, 30)}...", isFinal: ${isFinal}, roomId: ${currentRoomId}`);
+    
     if (text.trim()) {
+      // Update the UI immediately with the current transcription
       setCurrentTranslation({
         sourceText: text,
         targetText: isFinal ? "" : "Translating...",
@@ -186,9 +198,59 @@ export default function ChatRoom() {
         isPartial: !isFinal
       });
 
+      // Process final transcriptions
       if (isFinal && currentRoomId) {
+        console.log(`Processing final transcript: "${text?.substring(0, 30)}..." for room ${currentRoomId}`);
+        
         try {
-          await sendMessage(text, sourceLang, targetLang);
+          // For OpenAI or WebSpeech transcriptions, check if we have a complete translation
+          let existingTranslation = undefined;
+          let isUsingWebSpeech = false; // Track if this is a WebSpeech translation
+          
+          // Check our global window object for translation data (works for both OpenAI and WebSpeech)
+          if (window.__openAIRawTranscription && 
+              window.__openAIRawTranscription.sourceText === text &&
+              window.__openAIRawTranscription.translatedText &&
+              window.__openAIRawTranscription.translatedText !== 'Translating...') {
+            console.log("Using existing translation from window.__openAIRawTranscription");
+            existingTranslation = window.__openAIRawTranscription.translatedText;
+            
+            // Check if we're in WebSpeech mode to set appropriate formatting
+            isUsingWebSpeech = !(window as any).__speechInputTracking?.usingOpenAI;
+            
+            // Additional debug logging to verify the data
+            console.log("Translation data from window object:", {
+              sourceText: window.__openAIRawTranscription.sourceText,
+              translatedText: window.__openAIRawTranscription.translatedText,
+              isComplete: window.__openAIRawTranscription.isComplete,
+              isSourceComplete: window.__openAIRawTranscription.isSourceComplete,
+              isWebSpeech: isUsingWebSpeech
+            });
+          } 
+          // For backward compatibility, also check the older format
+          else if ((window as any).__lastOpenAIMessage && 
+              (window as any).__lastOpenAIMessage.text === text) {
+            console.log("Using existing OpenAI translation from __lastOpenAIMessage");
+            existingTranslation = (window as any).__lastOpenAIMessage.translatedText;
+          }
+          
+          if (existingTranslation) {
+            // Try to send the message with the existing translation
+            // Always set isOpenAI=true for both WebSpeech and OpenAI modes with translations
+            // This ensures the UI consistently shows both source and translation
+            await sendMessage(
+              text, 
+              sourceLang, 
+              targetLang,
+              existingTranslation
+            );
+          } else {
+            console.log("Sending message for translation");
+            // Regular send which will trigger translation
+            await sendMessage(text, sourceLang, targetLang);
+          }
+          
+          // Reset currentTranslation after sending
           setCurrentTranslation(null);
         } catch (error) {
           console.error('Failed to send message:', error);
@@ -202,26 +264,31 @@ export default function ChatRoom() {
     }
   };
 
-  const handlePlayTranslation = (text: string, lang: LanguageCode, ignoreMainSpeaker: boolean = false) => {
+  const handlePlayTranslation = useCallback((text: string, lang: LanguageCode) => {
     if (!isInitialized) return;
 
-    // If ignoreMainSpeaker is true, this is a manual play request from the message button
-    if (ignoreMainSpeaker) {
-      speak(text, lang);
-      return;
-    }
+    console.log(`PlayTranslation called: text="${text.substring(0, 20)}...", lang=${lang}`);
 
-    // Only auto-play if speaker is enabled AND either:
-    // 1. playTargetLanguage is true (play all target language messages)
-    // 2. OR the message is in the source language and playTargetLanguage is false
-    if (speakerEnabled) {
-      if (playTargetLanguage && lang === targetLang) {
-        speak(text, lang);
-      } else if (!playTargetLanguage && lang === sourceLang) {
-        speak(text, lang);
-      }
+    // Always stop any currently playing audio first
+    if (window.speechSynthesis) {
+      console.log('Cancelling any ongoing speech synthesis');
+      window.speechSynthesis.cancel();
     }
-  };
+    
+    // Set the speaking state to prevent multiple simultaneous playbacks
+    setSpeakerEnabled(false);
+    
+    // Slight delay to ensure cancel is processed
+    setTimeout(() => {
+      console.log(`Playing text in ${lang}: "${text.substring(0, 20)}..."`);
+      speak(text, lang, true);
+      
+      // Re-enable the speaker after a short delay to prevent rapid clicks
+      setTimeout(() => {
+        setSpeakerEnabled(true);
+      }, 500);
+    }, 100);
+  }, [isInitialized, speak]);
 
   useEffect(() => {
     if ('speechSynthesis' in window) {
@@ -231,18 +298,65 @@ export default function ChatRoom() {
 
   useEffect(() => {
     const latestMessage = messages[messages.length - 1];
-    if (isInitialized && latestMessage && speakerEnabled) {
-      if (playTargetLanguage && latestMessage.targetLang === targetLang) {
-        setTimeout(() => {
-          handlePlayTranslation(latestMessage.translatedText, latestMessage.targetLang as LanguageCode);
-        }, 100);
-      } else if (!playTargetLanguage && latestMessage.targetLang === sourceLang) {
-        setTimeout(() => {
-          handlePlayTranslation(latestMessage.translatedText, latestMessage.targetLang as LanguageCode);
-        }, 100);
+    
+    // Check if this is actually a new message by comparing with our previous length
+    const isNewMessage = messages.length > messagesLengthRef.current;
+    messagesLengthRef.current = messages.length; // Update the ref
+    
+    // Only play NEW message audio when we're not already speaking and speaker is enabled
+    if (isInitialized && latestMessage && speakerEnabled && !isSpeaking && isNewMessage) {
+      // Check if this is an OpenAI translation
+      const isOpenAIMessage = latestMessage.isOpenAI === true;
+      
+      // Create a unique message ID to track if this message has been played
+      const messageId = `${latestMessage.temp_user_uuid}-${latestMessage.timestamp}`;
+      const hasBeenPlayed = playedMessageIds.current.has(messageId);
+      
+      // Log for debugging
+      console.log("Latest message for auto-play consideration:", {
+        text: latestMessage.text.substring(0, 20),
+        isOpenAI: latestMessage.isOpenAI, 
+        sourceLang: latestMessage.sourceLang,
+        targetLang: latestMessage.targetLang,
+        isSpeaking: isSpeaking,
+        speakerEnabled: speakerEnabled,
+        playTargetLanguage: playTargetLanguage,
+        hasBeenPlayed: hasBeenPlayed,
+        messageId: messageId,
+        isNewMessage: isNewMessage
+      });
+      
+      // Skip audio playback for messages that have already been played
+      if (hasBeenPlayed) {
+        console.log('Skipping auto audio playback for already played message');
+        return;
       }
+      
+      // Skip audio playback for OpenAI translations in Chat mode if we don't want auto-play
+      if (isOpenAIMessage && window.location.pathname.includes('/chat') && !playTargetLanguage) {
+        console.log('Skipping auto audio playback for OpenAI translation in Chat mode');
+        return;
+      }
+      
+      // For automatic playback, decide which message to play based on playTargetLanguage
+      setTimeout(() => {
+        // Only play if we're still not speaking (in case user clicked a different message)
+        if (!isSpeaking) {
+          if (playTargetLanguage && latestMessage.targetLang === targetLang) {
+            console.log(`Auto-playing target language message: ${latestMessage.targetLang}`);
+            // Mark this message as played
+            playedMessageIds.current.add(messageId);
+            handlePlayTranslation(latestMessage.translatedText, latestMessage.targetLang as LanguageCode);
+          } else if (!playTargetLanguage && latestMessage.targetLang === sourceLang) {
+            console.log(`Auto-playing source language message: ${latestMessage.sourceLang}`);
+            // Mark this message as played
+            playedMessageIds.current.add(messageId);
+            handlePlayTranslation(latestMessage.translatedText, latestMessage.targetLang as LanguageCode);
+          }
+        }
+      }, 100);
     }
-  }, [messages, speakerEnabled, isInitialized, sourceLang, targetLang, playTargetLanguage]);
+  }, [messages, isInitialized, speakerEnabled, isSpeaking, playTargetLanguage, targetLang, sourceLang, handlePlayTranslation]);
 
   const copyRoomId = () => {
     if (currentRoomId) {
@@ -293,6 +407,12 @@ export default function ChatRoom() {
   useEffect(() => {
     translateUI(sourceLang);
   }, [sourceLang]);
+
+  // Set playTargetLanguage as global variable when it changes
+  useEffect(() => {
+    (window as any).__playTargetLanguage = playTargetLanguage;
+    console.log(`Updated global playTargetLanguage to: ${playTargetLanguage}`);
+  }, [playTargetLanguage]);
 
   useEffect(() => {
     const translateQRText = async () => {
@@ -532,7 +652,22 @@ export default function ChatRoom() {
                     <div className="flex items-center gap-2">
                       <Switch
                         checked={playTargetLanguage}
-                        onCheckedChange={setPlayTargetLanguage}
+                        onCheckedChange={(checked) => {
+                          // When toggling this feature, reset the played messages tracking
+                          // So new messages will play with the new setting
+                          setPlayTargetLanguage(checked);
+                          
+                          // When turning ON the feature, mark all existing messages as "played"
+                          // This prevents replaying old messages when toggle is turned on
+                          if (checked) {
+                            console.log("Play my translated words enabled - only new messages will be played");
+                            // Mark all existing messages as played to avoid replaying them
+                            messages.forEach(msg => {
+                              const msgId = `${msg.temp_user_uuid}-${msg.timestamp}`;
+                              playedMessageIds.current.add(msgId);
+                            });
+                          }
+                        }}
                         id="play-target-lang"
                       />
                       <label
@@ -622,7 +757,8 @@ export default function ChatRoom() {
                   timestamp: new Date(msg.timestamp),
                   userEmoji: msg.user_emoji,
                   isCurrentUser: msg.temp_user_uuid === userId,
-                  temp_user_uuid: msg.temp_user_uuid
+                  temp_user_uuid: msg.temp_user_uuid,
+                  isOpenAI: msg.isOpenAI || (msg.text !== msg.translatedText)
                 }))}
                 currentTranslation={currentTranslation && !isSpeaking ? {
                   ...currentTranslation,
@@ -632,8 +768,7 @@ export default function ChatRoom() {
                 onPlayTranslation={(text, lang) =>
                   handlePlayTranslation(
                     text,
-                    lang,
-                    true
+                    lang
                   )
                 }
                 isSpeaking={isSpeaking}

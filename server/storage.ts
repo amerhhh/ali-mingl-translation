@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 export interface IStorage {
   addTranslation(translation: InsertTranslation): Promise<Translation>;
   getTranslations(): Promise<Translation[]>;
+  getRecentTranslations(roomId: string, limit: number): Promise<Translation[]>;
   clearRoomMessages(roomId: string): Promise<void>;
   isRoomExists(roomId: string): Promise<boolean>;
 }
@@ -98,6 +99,27 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.warn("Database unavailable, using memory storage");
       return this.memoryStore;
+    }
+  }
+
+  async getRecentTranslations(roomId: string, limit: number = 10): Promise<Translation[]> {
+    try {
+      if (!db) {
+        throw new Error("Database not available");
+      }
+      
+      return db
+        .select()
+        .from(translations)
+        .where(eq(translations.roomId, roomId))
+        .orderBy(desc(translations.timestamp))
+        .limit(limit);
+    } catch (error) {
+      console.warn("Database unavailable for recent translations, using memory storage");
+      return this.memoryStore
+        .filter(t => t.roomId === roomId)
+        .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+        .slice(0, limit);
     }
   }
 
