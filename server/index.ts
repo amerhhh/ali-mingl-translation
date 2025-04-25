@@ -58,9 +58,9 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Set port to 5000 for production (forwarded to port 80) or 5001 for development
-  const port = process.env.NODE_ENV === 'production' ? 5000 : 5001;
-  const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+  // Always use port 5000 and bind to all interfaces for deployments
+  const port = 5000;
+  const host = '0.0.0.0';
 
   server.listen({
     port,
