@@ -58,12 +58,14 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on a different port to avoid conflicts
-  const port = 5001;
+  // Set port to 5000 for production (forwarded to port 80) or 5001 for development
+  const port = process.env.NODE_ENV === 'production' ? 5000 : 5001;
+  const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+
   server.listen({
     port,
-    host: "localhost",
+    host,
   }, () => {
-    log(`serving on port ${port}`);
+    log(`serving on port ${port} (${host})`);
   });
 })();
