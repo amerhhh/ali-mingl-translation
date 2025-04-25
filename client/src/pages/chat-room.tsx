@@ -55,6 +55,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { apiRequest } from "@/lib/queryClient";
 
 const defaultUiText = {
   roomTitle: "Room ID:",
@@ -87,6 +88,23 @@ const defaultUiText = {
   chat: "Chat",
   listen: "Listen",
   help: "Help"
+};
+
+// Helper function to turn off the microphone
+const turnOffMicrophone = () => {
+  // Check if microphone is active
+  const isMicrophoneActive = window.__speechInputTracking?.isListening;
+  
+  // Get microphone element to trigger a click if it's active
+  const microphoneButton = document.querySelector('.rounded-full');
+  
+  // If mic is active, click it to turn it off
+  if (isMicrophoneActive && microphoneButton instanceof HTMLButtonElement) {
+    console.log("Turning off microphone due to language change");
+    microphoneButton.click();
+    return true;
+  }
+  return false;
 };
 
 export default function ChatRoom() {
@@ -164,6 +182,9 @@ export default function ChatRoom() {
     loadStoredMessages
   } = useChatRoom(currentRoomId);
 
+  // Add a state to store both room IDs
+  const [roomIds, setRoomIds] = useState<{chatRoomId: string, listenRoomId: string} | null>(null);
+
   useEffect(() => {
     const initializeChat = async () => {
       setIsLoading(true);
@@ -183,6 +204,35 @@ export default function ChatRoom() {
     };
 
     initializeChat();
+  }, [currentRoomId]);
+
+  useEffect(() => {
+    // Load room IDs from localStorage if they exist
+    const storedRoomIds = localStorage.getItem('streamflow_room_ids');
+    let parsedRoomIds = null;
+    
+    if (storedRoomIds) {
+      try {
+        parsedRoomIds = JSON.parse(storedRoomIds);
+        setRoomIds(parsedRoomIds);
+      } catch (error) {
+        console.error("Failed to parse stored room IDs:", error);
+      }
+    }
+    
+    // Update the chat room ID with the current room ID
+    if (currentRoomId) {
+      const updatedRoomIds = parsedRoomIds ? { 
+        ...parsedRoomIds,
+        chatRoomId: currentRoomId 
+      } : { 
+        chatRoomId: currentRoomId,
+        listenRoomId: parsedRoomIds?.listenRoomId || currentRoomId
+      };
+      
+      localStorage.setItem('streamflow_room_ids', JSON.stringify(updatedRoomIds));
+      setRoomIds(updatedRoomIds);
+    }
   }, [currentRoomId]);
 
   const handleTranscript = async (text: string, isFinal: boolean) => {
@@ -375,13 +425,107 @@ export default function ChatRoom() {
     }
   };
 
+  // Function to handle source language change with microphone control
+  const handleSourceLangChange = (newLang: LanguageCode) => {
+    // Turn off microphone if it's active
+    const wasMicActive = turnOffMicrophone();
+    
+    // Set the new language
+    setSourceLang(newLang);
+    
+    // Reset speech system to ensure proper cleanup
+    if (window.speechSynthesis) {
+      console.log('Stopping any ongoing speech synthesis');
+      window.speechSynthesis.cancel();
+    }
+    
+    // Reset global speech tracking if it exists
+    if (window.__speechInputTracking) {
+      window.__speechInputTracking.preventLanguageEffectTrigger = false;
+    }
+    
+    // Show toast if microphone was active
+    if (wasMicActive) {
+      // Small delay to let the language change take effect first
+      setTimeout(() => {
+        toast({
+          title: "Language Changed",
+          description: "Please turn on the microphone again to start speaking in the new language.",
+          duration: 3000
+        });
+      }, 500);
+    }
+  };
+
+  // Function to handle target language change with microphone control
+  const handleTargetLangChange = (newLang: LanguageCode) => {
+    // Turn off microphone if it's active
+    const wasMicActive = turnOffMicrophone();
+    
+    // Set the new language
+    setTargetLang(newLang);
+    
+    // Reset speech system to ensure proper cleanup
+    if (window.speechSynthesis) {
+      console.log('Stopping any ongoing speech synthesis');
+      window.speechSynthesis.cancel();
+    }
+    
+    // Reset global speech tracking if it exists
+    if (window.__speechInputTracking) {
+      window.__speechInputTracking.preventLanguageEffectTrigger = false;
+    }
+    
+    // Show toast if microphone was active
+    if (wasMicActive) {
+      // Small delay to let the language change take effect first
+      setTimeout(() => {
+        toast({
+          title: "Language Changed",
+          description: "Please turn on the microphone again to continue.",
+          duration: 3000
+        });
+      }, 500);
+    }
+  };
+
   const handleSwapLanguages = () => {
-    const temp = sourceLang;
-    setSourceLang(targetLang);
-    setTargetLang(temp);
-    setCurrentTranslation(null);
-    setSpeakerEnabled(false);
-    setTimeout(() => setSpeakerEnabled(true), 100);
+    // First, check if microphone is active and turn it off
+    const wasMicActive = turnOffMicrophone();
+    
+    // Add a delay to ensure microphone is properly turned off if it was active
+    // Use a slightly longer delay for more reliable cleanup
+    setTimeout(() => {
+      // Then swap languages
+      const temp = sourceLang;
+      setSourceLang(targetLang);
+      setTargetLang(temp);
+      setCurrentTranslation(null);
+      
+      // Reset speech system to ensure proper cleanup
+      if (window.speechSynthesis) {
+        console.log('Stopping any ongoing speech synthesis');
+        window.speechSynthesis.cancel();
+      }
+      
+      // Reset global speech tracking if it exists
+      if (window.__speechInputTracking) {
+        window.__speechInputTracking.preventLanguageEffectTrigger = false;
+      }
+      
+      // Reset speech state with a small delay
+      setSpeakerEnabled(false);
+      setTimeout(() => setSpeakerEnabled(true), 200);
+      
+      // Display a toast to inform the user if the mic was active
+      if (wasMicActive) {
+        toast({
+          title: "Languages Swapped",
+          description: "Please turn on the microphone again to start speaking in the new language.",
+          duration: 3000
+        });
+      }
+    }, wasMicActive ? 800 : 0); // Increase delay for more reliable cleanup
   };
 
   const translateUI = async (lang: LanguageCode) => {
@@ -478,7 +622,36 @@ export default function ChatRoom() {
         <div className="mb-6">
           <Tabs defaultValue="chat" className="w-full" onValueChange={value => {
             if (value === "listen") {
-              setLocation(currentRoomId ? `/listen/${currentRoomId}` : '/listen');
+              // Use pre-created listen room ID if available
+              if (roomIds?.listenRoomId) {
+                setLocation(`/listen/${roomIds.listenRoomId}`);
+              } else {
+                // Fall back to creating a new room if needed
+                const createListenRoom = async () => {
+                  try {
+                    const response = await apiRequest({
+                      method: "POST", 
+                      url: "/api/rooms", 
+                      data: {},
+                      on401: "throw"
+                    });
+                    
+                    // Navigate to the new listen room with its own unique ID
+                    setLocation(`/listen/${response.roomId}`);
+                  } catch (error) {
+                    console.error("Failed to create listen room:", error);
+                    toast({
+                      variant: "destructive",
+                      title: "Failed to create listen room",
+                      description: "Using chat room ID as fallback"
+                    });
+                    // Fallback to old behavior if room creation fails
+                    setLocation(currentRoomId ? `/listen/${currentRoomId}` : '/listen');
+                  }
+                };
+                
+                createListenRoom();
+              }
             } else if (value === "help") {
               setLocation('/help');
             }
@@ -708,7 +881,7 @@ export default function ChatRoom() {
                   <div>
                     <LanguageSelector
                       value={sourceLang}
-                      onChange={setSourceLang}
+                      onChange={handleSourceLangChange}
                       label={uiText.from}
                       placeholder="Source language"
                     />
@@ -717,7 +890,7 @@ export default function ChatRoom() {
                     <div className="flex-1">
                       <LanguageSelector
                         value={targetLang}
-                        onChange={setTargetLang}
+                        onChange={handleTargetLangChange}
                         label={uiText.to}
                         placeholder="Target language"
                       />

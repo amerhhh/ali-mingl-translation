@@ -158,20 +158,38 @@ export function useOpenAISpeechRecognition({
         try {
           const urlParams = new URLSearchParams(window.location.search);
           const urlRoomId = urlParams.get('id');
-          if (urlRoomId) {
-            roomId = urlRoomId;
-          } else {
-            // Try to get from path
-            const pathParts = window.location.pathname.split('/');
-            if (pathParts.length > 2) {
-              // Check if we're in a chat or listen page
-              if (pathParts.includes('chat') || pathParts.includes('listen')) {
-                const segmentType = pathParts.includes('chat') ? 'chat' : 'listen';
-                const segmentIndex = pathParts.indexOf(segmentType);
-                if (segmentIndex >= 0 && segmentIndex + 1 < pathParts.length) {
-                  roomId = pathParts[segmentIndex + 1];
-                }
+          const pathParts = window.location.pathname.split('/');
+          const isListenMode = pathParts.includes('listen');
+          const isChatMode = pathParts.includes('chat');
+          
+          // Different ID handling for listen mode
+          if (isListenMode) {
+            // For listen mode, prefer using a prefix to clearly identify it
+            if (urlRoomId) {
+              // Add prefix to query parameter ID to make it distinct
+              roomId = `listen_${urlRoomId}`;
+            } else {
+              // Extract from path with prefix
+              const listenIndex = pathParts.indexOf('listen');
+              if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+                roomId = `listen_${pathParts[listenIndex + 1]}`;
               }
+            }
+          } else if (isChatMode) {
+            // Original method for chat mode
+            if (urlRoomId) {
+              roomId = urlRoomId;
+            } else {
+              // Extract from path
+              const chatIndex = pathParts.indexOf('chat');
+              if (chatIndex >= 0 && chatIndex + 1 < pathParts.length) {
+                roomId = pathParts[chatIndex + 1];
+              }
+            }
+          } else {
+            // Fallback for other pages
+            if (urlRoomId) {
+              roomId = urlRoomId;
             }
           }
         } catch (e) {
@@ -411,20 +429,38 @@ export function useOpenAISpeechRecognition({
             try {
               const urlParams = new URLSearchParams(window.location.search);
               const urlRoomId = urlParams.get('id');
-              if (urlRoomId) {
-                roomId = urlRoomId;
-              } else {
-                // Try to get from path
-                const pathParts = window.location.pathname.split('/');
-                if (pathParts.length > 2) {
-                  // Check if we're in a chat or listen page
-                  if (pathParts.includes('chat') || pathParts.includes('listen')) {
-                    const segmentType = pathParts.includes('chat') ? 'chat' : 'listen';
-                    const segmentIndex = pathParts.indexOf(segmentType);
-                    if (segmentIndex >= 0 && segmentIndex + 1 < pathParts.length) {
-                      roomId = pathParts[segmentIndex + 1];
-                    }
+              const pathParts = window.location.pathname.split('/');
+              const isListenMode = pathParts.includes('listen');
+              const isChatMode = pathParts.includes('chat');
+              
+              // Different ID handling for listen mode
+              if (isListenMode) {
+                // For listen mode, prefer using a prefix to clearly identify it
+                if (urlRoomId) {
+                  // Add prefix to query parameter ID to make it distinct
+                  roomId = `listen_${urlRoomId}`;
+                } else {
+                  // Extract from path with prefix
+                  const listenIndex = pathParts.indexOf('listen');
+                  if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+                    roomId = `listen_${pathParts[listenIndex + 1]}`;
                   }
+                }
+              } else if (isChatMode) {
+                // Original method for chat mode
+                if (urlRoomId) {
+                  roomId = urlRoomId;
+                } else {
+                  // Extract from path
+                  const chatIndex = pathParts.indexOf('chat');
+                  if (chatIndex >= 0 && chatIndex + 1 < pathParts.length) {
+                    roomId = pathParts[chatIndex + 1];
+                  }
+                }
+              } else {
+                // Fallback for other pages
+                if (urlRoomId) {
+                  roomId = urlRoomId;
                 }
               }
             } catch (e) {
@@ -1127,20 +1163,38 @@ export function useOpenAISpeechRecognition({
         try {
           const urlParams = new URLSearchParams(window.location.search);
           const urlRoomId = urlParams.get('id');
-          if (urlRoomId) {
-            roomId = urlRoomId;
-          } else {
-            // Try to get from path
-            const pathParts = window.location.pathname.split('/');
-            if (pathParts.length > 2) {
-              // Check if we're in a chat or listen page
-              if (pathParts.includes('chat') || pathParts.includes('listen')) {
-                const segmentType = pathParts.includes('chat') ? 'chat' : 'listen';
-                const segmentIndex = pathParts.indexOf(segmentType);
-                if (segmentIndex >= 0 && segmentIndex + 1 < pathParts.length) {
-                  roomId = pathParts[segmentIndex + 1];
-                }
+          const pathParts = window.location.pathname.split('/');
+          const isListenMode = pathParts.includes('listen');
+          const isChatMode = pathParts.includes('chat');
+          
+          // Different ID handling for listen mode
+          if (isListenMode) {
+            // For listen mode, prefer using a prefix to clearly identify it
+            if (urlRoomId) {
+              // Add prefix to query parameter ID to make it distinct
+              roomId = `listen_${urlRoomId}`;
+            } else {
+              // Extract from path with prefix
+              const listenIndex = pathParts.indexOf('listen');
+              if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+                roomId = `listen_${pathParts[listenIndex + 1]}`;
               }
+            }
+          } else if (isChatMode) {
+            // Original method for chat mode
+            if (urlRoomId) {
+              roomId = urlRoomId;
+            } else {
+              // Extract from path
+              const chatIndex = pathParts.indexOf('chat');
+              if (chatIndex >= 0 && chatIndex + 1 < pathParts.length) {
+                roomId = pathParts[chatIndex + 1];
+              }
+            }
+          } else {
+            // Fallback for other pages
+            if (urlRoomId) {
+              roomId = urlRoomId;
             }
           }
         } catch (e) {
@@ -1195,6 +1249,14 @@ export function useOpenAISpeechRecognition({
     try {
       // Check if we're in listen mode for specialized deduplication
       const isListenPage = window.location.pathname.includes('/listen');
+      
+      // If roomId doesn't already have a prefix but we're in listen mode, add it
+      // This ensures listen mode and chat mode use different room IDs to prevent
+      // messages crossing between modes, even when viewing the same logical room
+      if (isListenPage && roomId !== 'unknown' && !roomId.startsWith('listen_')) {
+        roomId = `listen_${roomId}`;
+        console.log("[OpenAI WebRTC] Updated listen mode roomId with prefix:", roomId);
+      }
       
       // For listen mode, use a shared counter across all handlers to completely prevent duplication
       if (isListenPage) {

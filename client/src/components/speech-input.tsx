@@ -111,8 +111,37 @@ export function SpeechInput({
       const isChatPage = window.location.pathname.includes('/chat');
       const hasQueryParam = window.location.search.includes('id=');
       
+      // Get the room ID for the current page using our consistent approach
+      let roomId = 'unknown';
+      try {
+        const pathParts = window.location.pathname.split('/');
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomIdFromQuery = urlParams.get('id');
+        
+        if (roomIdFromQuery) {
+          roomId = roomIdFromQuery;
+        } else if (isListenPage) {
+          const listenIndex = pathParts.indexOf('listen');
+          if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+            roomId = pathParts[listenIndex + 1];
+          }
+        } else if (isChatPage) {
+          const chatIndex = pathParts.indexOf('chat');
+          if (chatIndex >= 0 && chatIndex + 1 < pathParts.length) {
+            roomId = pathParts[chatIndex + 1];
+          }
+        }
+        
+        // Apply prefix for listen mode to differentiate
+        if (isListenPage && roomId !== 'unknown') {
+          roomId = `listen_${roomId}`;
+        }
+      } catch (e) {
+        console.error('Error extracting room ID in onTranslation:', e);
+      }
+      
       // Add debug information to help trace the flow
-      console.log(`Speech Input: Handling OpenAI translation - isListenPage: ${isListenPage}, isChatPage: ${isChatPage}, hasQueryParam: ${hasQueryParam}, sourceText: "${sourceText?.substring(0,20)}...", translatedText: "${translatedText?.substring(0,20)}..."`);
+      console.log(`Speech Input: Handling OpenAI translation - isListenPage: ${isListenPage}, isChatPage: ${isChatPage}, hasQueryParam: ${hasQueryParam}, roomId: ${roomId}, sourceText: "${sourceText?.substring(0,20)}...", translatedText: "${translatedText?.substring(0,20)}..."`);
       
       // Force audio to play - ensure audio context is running
       if (window.speechSynthesis) {
@@ -206,27 +235,42 @@ export function SpeechInput({
         const urlParams = new URLSearchParams(window.location.search);
         const roomIdFromQuery = urlParams.get('id');
         
+        // Determine if we're in listen mode or chat mode
+        const isListenMode = pathParts.includes('listen');
+        const isChatMode = pathParts.includes('chat');
+        
         // First try query parameter format
         let roomId = roomIdFromQuery || 'unknown';
         
         // If no query parameter, try path format
         if (!roomIdFromQuery) {
-          const roomSegment = pathParts.includes('chat') ? 'chat' : (pathParts.includes('listen') ? 'listen' : 'unknown');
-          const roomIdIndex = pathParts.indexOf(roomSegment) + 1;
-          if (roomIdIndex > 0 && roomIdIndex < pathParts.length) {
-            roomId = pathParts[roomIdIndex];
+          if (isListenMode) {
+            const listenIndex = pathParts.indexOf('listen');
+            if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+              roomId = pathParts[listenIndex + 1];
+            }
+          } else if (isChatMode) {
+            const chatIndex = pathParts.indexOf('chat');
+            if (chatIndex >= 0 && chatIndex + 1 < pathParts.length) {
+              roomId = pathParts[chatIndex + 1];
+            }
           }
+        }
+        
+        // Apply prefix for listen mode to differentiate from chat mode
+        if (isListenMode && roomId !== 'unknown') {
+          roomId = `listen_${roomId}`;
         }
 
         setDebugInfo(JSON.stringify({
           source: openAIData.sourceText || "",
           translation: openAIData.translatedText || "",
           roomId: roomId,
+          mode: isListenMode ? 'listen' : (isChatMode ? 'chat' : 'unknown'),
           queryParam: roomIdFromQuery ? 'yes' : 'no',
           fullURL: window.location.href,
           path: window.location.pathname,
           search: window.location.search,
-          mode: pathParts.includes('chat') ? 'chat' : (pathParts.includes('listen') ? 'listen' : 'unknown'),
           time: new Date().toLocaleTimeString()
         }, null, 2));
       }
@@ -322,12 +366,72 @@ export function SpeechInput({
           if (message.text === lastTranscriptSent.current && message.translatedText) {
             console.log('Received translation for WebSpeech message:', message.translatedText);
             
+            // Check if we're in listen mode
+            const isListenMode = window.location.pathname.includes('/listen');
+            
+            // Get the room ID for the current page
+            let roomId = 'unknown';
+            try {
+              const pathParts = window.location.pathname.split('/');
+              const urlParams = new URLSearchParams(window.location.search);
+              const roomIdFromQuery = urlParams.get('id');
+              
+              if (roomIdFromQuery) {
+                roomId = roomIdFromQuery;
+              } else if (isListenMode) {
+                const listenIndex = pathParts.indexOf('listen');
+                if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+                  roomId = pathParts[listenIndex + 1];
+                }
+              } else {
+                const chatIndex = pathParts.indexOf('chat');
+                if (chatIndex >= 0 && chatIndex + 1 < pathParts.length) {
+                  roomId = pathParts[chatIndex + 1];
+                }
+              }
+              
+              // Apply prefix for listen mode to match the OpenAI approach
+              if (isListenMode && roomId !== 'unknown') {
+                roomId = `listen_${roomId}`;
+              }
+            } catch (e) {
+              console.error('Error extracting room ID for WebSpeech:', e);
+            }
+            
+            // For listen mode, implement stricter deduplication
+            if (isListenMode) {
+              // Create a unique fingerprint for this message
+              const messageFingerprint = `${message.text}-${message.translatedText}`;
+              
+              // Initialize or get the global deduplication registry
+              const webSpeechProcessed = (window as any).__webSpeechProcessedMessages = 
+                (window as any).__webSpeechProcessedMessages || {};
+              
+              // Add a time window-based key so we can reprocess identical messages after some time
+              const timeWindow = Math.floor(Date.now() / 30000); // 30-second window
+              const dedupKey = `${messageFingerprint}-${timeWindow}`;
+              
+              // Check if we've already processed this message in the current time window
+              if (webSpeechProcessed[dedupKey]) {
+                console.log(`[WebSpeech] BLOCKING duplicate message in listen mode:`, 
+                  message.text.substring(0, 30) + "...");
+                return;
+              }
+              
+              // Mark this message as processed for this time window
+              webSpeechProcessed[dedupKey] = true;
+              
+              console.log(`[WebSpeech] Processing message in listen mode with dedupKey`);
+            }
+            
             // Update the global OpenAI transcription object for UI display
             if (window.__openAIRawTranscription) {
               window.__openAIRawTranscription.sourceText = message.text;
               window.__openAIRawTranscription.translatedText = message.translatedText;
               window.__openAIRawTranscription.isComplete = true;
               window.__openAIRawTranscription.isSourceComplete = true;
+              // Add room ID to match OpenAI debug format
+              (window.__openAIRawTranscription as any).roomId = roomId;
             }
             
             // Simulate an onTranslation callback like OpenAI uses
@@ -374,7 +478,7 @@ export function SpeechInput({
               
               // Mark it as processed to prevent duplicate processing
               processedMessages[messageKey] = true;
-              console.log(`[WebSpeech] First time processing transcript in listen mode:`, message.text.substring(0, 30) + "...");
+              console.log(`[WebSpeech] First time processing transcript in listen mode with dedupKey`);
             }
             
             // IMPORTANT: For WebSpeech, make sure we're sending the original transcript text
@@ -435,18 +539,22 @@ export function SpeechInput({
           // Create a message fingerprint
           const messageKey = `${transcriptResult.finalText}`;
           
-          // Use a shared global cache for listen mode messages
+          // Use a time window-based approach for deduplication
+          const timeWindow = Math.floor(Date.now() / 30000); // 30-second window
+          const dedupKey = `${messageKey}-${timeWindow}`;
+          
+          // Use a shared global cache for all listen mode messages
           const processedMessages = (window as any).__listenModeTranscriptsSent = (window as any).__listenModeTranscriptsSent || {};
           
-          // Check if we've seen this message before in listen mode
-          if (processedMessages[messageKey]) {
+          // Check if we've seen this message before in the current time window
+          if (processedMessages[dedupKey]) {
             console.log(`[WebSpeech] BLOCKING duplicate transcript send in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
             return;
           }
           
-          // Mark it as processed to prevent duplicate sending
-          processedMessages[messageKey] = true;
-          console.log(`[WebSpeech] First time sending transcript in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
+          // Mark it as processed for this time window
+          processedMessages[dedupKey] = true;
+          console.log(`[WebSpeech] First time sending transcript in listen mode with dedupKey`);
         }
         
         // Store the source text in the window to mimic OpenAI format
@@ -882,24 +990,72 @@ export function SpeechInput({
             <Card className="mt-4 p-3 bg-slate-800 text-white">
               <h4 className="text-xs font-medium mb-1">{useOpenAI ? "OpenAI" : "WebSpeech"} Debug Info</h4>
               <pre className="text-xs overflow-x-auto whitespace-pre-wrap">
-                {JSON.stringify({
-                  mode: useOpenAI ? "OpenAI" : "WebSpeech",
-                  sourceText: window.__openAIRawTranscription.sourceText || "",
-                  translatedText: window.__openAIRawTranscription.translatedText || "",
-                  isComplete: window.__openAIRawTranscription.isComplete || false,
-                  isSourceComplete: window.__openAIRawTranscription.isSourceComplete || false,
-                  url: window.location.href,
-                  time: new Date().toLocaleTimeString()
-                }, null, 2)}
+                {debugInfo}
               </pre>
               <div className="mt-2 text-xs">
                 <button 
                   className="bg-blue-500 px-2 py-1 rounded text-white"
-                  onClick={() => console.log(`${useOpenAI ? 'OpenAI' : 'WebSpeech'} raw data:`, 
-                    window.__openAIRawTranscription)}
+                  onClick={() => {
+                    console.log(`${useOpenAI ? 'OpenAI' : 'WebSpeech'} raw data:`, 
+                      window.__openAIRawTranscription);
+                      
+                    // Add room ID extraction debug info
+                    const pathParts = window.location.pathname.split('/');
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const roomIdFromQuery = urlParams.get('id');
+                    const isListenMode = pathParts.includes('listen');
+                    
+                    // Extract raw roomId
+                    let rawRoomId = roomIdFromQuery || 'unknown';
+                    if (!roomIdFromQuery) {
+                      if (isListenMode) {
+                        const listenIndex = pathParts.indexOf('listen');
+                        if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+                          rawRoomId = pathParts[listenIndex + 1];
+                        }
+                      }
+                    }
+                    
+                    // Prefixed room ID for listen mode
+                    const prefixedRoomId = isListenMode ? `listen_${rawRoomId}` : rawRoomId;
+                    
+                    console.log("Room ID Details:", {
+                      rawRoomId,
+                      prefixedRoomId,
+                      isListenMode,
+                      path: window.location.pathname,
+                      queryParams: window.location.search
+                    });
+                  }}
                 >
                   Log Details to Console
                 </button>
+                <div className="mt-2 bg-gray-900 p-1 rounded">
+                  <p className="text-xs">
+                    Mode: <span className="text-green-400">{window.location.pathname.includes('/listen') ? 'Listen' : 'Chat'}</span> | 
+                    URL Room ID: <span className="text-yellow-400">{
+                      (() => {
+                        const pathParts = window.location.pathname.split('/');
+                        const type = pathParts.includes('listen') ? 'listen' : (pathParts.includes('chat') ? 'chat' : '');
+                        const index = pathParts.indexOf(type);
+                        return index >= 0 && index + 1 < pathParts.length ? pathParts[index + 1] : 'none';
+                      })()
+                    }</span> | 
+                    Internal Room ID: <span className="text-orange-400">{
+                      window.location.pathname.includes('/listen') ? 
+                      `listen_${(() => {
+                        const pathParts = window.location.pathname.split('/');
+                        const index = pathParts.indexOf('listen');
+                        return index >= 0 && index + 1 < pathParts.length ? pathParts[index + 1] : 'unknown';
+                      })()}` : 
+                      (() => {
+                        const pathParts = window.location.pathname.split('/');
+                        const index = pathParts.indexOf('chat');
+                        return index >= 0 && index + 1 < pathParts.length ? pathParts[index + 1] : 'unknown';
+                      })()
+                    }</span>
+                  </p>
+                </div>
               </div>
             </Card>
           )}

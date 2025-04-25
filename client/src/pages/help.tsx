@@ -28,6 +28,9 @@ export default function Help() {
   const currentRoomId = urlSearchParams.get('id') || '';
   const [, setLocation] = useLocation();
   const [uiText, setUiText] = useState(defaultUiText);
+  
+  // Add a state to store both room IDs
+  const [roomIds, setRoomIds] = useState<{chatRoomId: string, listenRoomId: string} | null>(null);
 
   const getInitialLanguages = () => {
     const deviceLang = navigator.language.split('-')[0].toLowerCase();
@@ -64,6 +67,16 @@ export default function Help() {
 
   useEffect(() => {
     translateUI(sourceLang);
+    
+    // Load room IDs from localStorage if they exist
+    const storedRoomIds = localStorage.getItem('streamflow_room_ids');
+    if (storedRoomIds) {
+      try {
+        setRoomIds(JSON.parse(storedRoomIds));
+      } catch (error) {
+        console.error("Failed to parse stored room IDs:", error);
+      }
+    }
   }, [sourceLang]);
 
   return (
@@ -73,9 +86,21 @@ export default function Help() {
         <div className="mb-6">
           <Tabs defaultValue="help" className="w-full" onValueChange={value => {
             if (value === "chat") {
-              window.location.href = `/chat${currentRoomId ? `?id=${currentRoomId}` : ''}`;
+              // Use pre-created chat room ID if available
+              if (roomIds?.chatRoomId) {
+                setLocation(`/chat/${roomIds.chatRoomId}`);
+              } else {
+                // Fall back to current room ID or just navigate to base chat
+                setLocation(currentRoomId ? `/chat/${currentRoomId}` : '/chat');
+              }
             } else if (value === "listen") {
-              window.location.href = `/listen${currentRoomId ? `?id=${currentRoomId}` : ''}`;
+              // Use pre-created listen room ID if available
+              if (roomIds?.listenRoomId) {
+                setLocation(`/listen/${roomIds.listenRoomId}`);
+              } else {
+                // Fall back to current room ID or just navigate to base listen
+                setLocation(currentRoomId ? `/listen/${currentRoomId}` : '/listen');
+              }
             }
           }}>
             <TabsList className="grid grid-cols-3 w-full">

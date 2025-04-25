@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Users, Copy, ChevronDown, ChevronUp, MessageSquare, Headphones, HelpCircle } from "lucide-react";
+import { Users, Copy, ChevronDown, ChevronUp, MessageSquare, Headphones, HelpCircle, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { QRCode } from "@/components/qr-code";
@@ -12,55 +12,110 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export default function Home() {
   const [, setLocation] = useLocation();
   const [joinRoomId, setJoinRoomId] = useState("");
-  const [myRoomId, setMyRoomId] = useState<string | null>(null);
-  const [showQR, setShowQR] = useState(false);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const { toast } = useToast();
+  
+  // Interface for storing both chat and listen room IDs
+  interface RoomIds {
+    chatRoomId: string;
+    listenRoomId: string;
+  }
+  
+  // Store room IDs as a state for use in navigation
+  const [roomIds, setRoomIds] = useState<RoomIds | null>(null);
 
-  // Create a room when the page loads
   useEffect(() => {
-    const createInitialRoom = async () => {
-      try {
-        const response = await apiRequest({
-          method: "POST", 
-          url: "/api/rooms", 
+    // Always create new rooms when landing on the home page
+    createNewRooms();
+  }, []);
+  
+  // Automatically navigate to chat room once roomIds are set
+  useEffect(() => {
+    if (roomIds?.chatRoomId) {
+      // Automatically navigate to the chat room
+      setLocation(`/chat/${roomIds.chatRoomId}`);
+    }
+  }, [roomIds, setLocation]);
+
+  // Create both chat and listen room IDs at once
+  const createNewRooms = async () => {
+    try {
+      setIsCreatingRoom(true);
+      
+      // Create chat room ID
+      const chatResponse = await apiRequest({
+        method: "POST",
+        url: "/api/rooms",
+        data: {},
+        on401: "throw",
+      });
+      
+      // Create listen room ID
+      const listenResponse = await apiRequest({
+        method: "POST",
+        url: "/api/rooms",
+        data: {},
+        on401: "throw",
+      });
+      
+      // Ensure chat and listen IDs are different
+      if (chatResponse.roomId === listenResponse.roomId) {
+        // If by chance they are the same, create another listen room
+        const newListenResponse = await apiRequest({
+          method: "POST",
+          url: "/api/rooms",
           data: {},
-          on401: "throw"
+          on401: "throw",
         });
         
-        setMyRoomId(response.roomId);
-        // Automatically join the room
-        setLocation(`/chat?id=${response.roomId}`);
-      } catch (error) {
-        console.error("Failed to create initial room:", error);
-        toast({
-          variant: "destructive",
-          title: "Failed to create room",
-          description: "Please refresh the page to try again"
-        });
+        // Store both room IDs
+        const newRoomIds: RoomIds = {
+          chatRoomId: chatResponse.roomId,
+          listenRoomId: newListenResponse.roomId
+        };
+        
+        localStorage.setItem('streamflow_room_ids', JSON.stringify(newRoomIds));
+        setRoomIds(newRoomIds);
+      } else {
+        // Store both room IDs
+        const newRoomIds: RoomIds = {
+          chatRoomId: chatResponse.roomId,
+          listenRoomId: listenResponse.roomId
+        };
+        
+        localStorage.setItem('streamflow_room_ids', JSON.stringify(newRoomIds));
+        setRoomIds(newRoomIds);
       }
-    };
+    } catch (error) {
+      console.error("Room creation failed:", error);
+      toast({
+        variant: "destructive",
+        title: "Room Creation Failed",
+        description: "Unable to create new room. Please try again."
+      });
+    } finally {
+      setIsCreatingRoom(false);
+    }
+  };
 
-    createInitialRoom();
-  }, [toast, setLocation]);
-
-  const joinRoom = (e: React.FormEvent, mode: 'chat' | 'listen' = 'chat') => {
+  const joinRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (joinRoomId.trim()) {
-      setLocation(`/${mode}?id=${joinRoomId.trim()}`);
+      setLocation(`/chat/${joinRoomId}`);
     }
   };
 
   const copyRoomId = () => {
-    if (myRoomId) {
-      navigator.clipboard.writeText(myRoomId);
+    if (roomIds?.chatRoomId) {
+      navigator.clipboard.writeText(roomIds.chatRoomId);
       toast({
-        title: "Copied!",
-        description: "Room ID copied to clipboard"
+        title: "Room ID Copied",
+        description: "Room ID has been copied to clipboard."
       });
     }
   };
 
-  const shareUrl = myRoomId ? `${window.location.origin}/chat?id=${myRoomId}` : '';
+  const shareUrl = roomIds?.chatRoomId ? `${window.location.origin}/chat/${roomIds.chatRoomId}` : '';
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
@@ -70,21 +125,35 @@ export default function Home() {
             Real-time Translation Chat
           </h1>
           
+          {/* Loading indicator while creating rooms */}
+          {isCreatingRoom && (
+            <Card className="p-6">
+              <div className="flex items-center justify-center gap-3">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <p className="text-muted-foreground">Creating your chat rooms...</p>
+              </div>
+            </Card>
+          )}
+          
           {/* Main Navigation Tabs */}
           <div>
             <Tabs defaultValue="chat" className="w-full" onValueChange={value => {
-              if (value === "listen") {
-                if (myRoomId) {
-                  setLocation(`/listen?id=${myRoomId}`);
+              if (value === "chat") {
+                // Navigate to chat with pre-created chat room ID
+                if (roomIds?.chatRoomId) {
+                  setLocation(`/chat/${roomIds.chatRoomId}`);
+                } else {
+                  setLocation("/chat");
+                }
+              } else if (value === "listen") {
+                // Navigate to listen with pre-created listen room ID
+                if (roomIds?.listenRoomId) {
+                  setLocation(`/listen/${roomIds.listenRoomId}`);
                 } else {
                   setLocation("/listen");
                 }
               } else if (value === "help") {
-                if (myRoomId) {
-                  setLocation(`/help?id=${myRoomId}`);
-                } else {
-                  setLocation("/help");
-                }
+                setLocation('/help');
               }
             }}>
               <TabsList className="grid grid-cols-3 w-full">
@@ -105,13 +174,13 @@ export default function Home() {
           </div>
 
           <div className="space-y-8">
-            {myRoomId ? (
+            {roomIds?.chatRoomId ? (
               <Card className="p-6">
                 <div className="space-y-4">
                   <div className="flex items-center gap-4 p-3 bg-muted rounded-lg">
                     <div className="flex-1">
                       <p className="text-sm text-muted-foreground">Room ID:</p>
-                      <p className="text-2xl font-mono">{myRoomId}</p>
+                      <p className="text-2xl font-mono">{roomIds.chatRoomId}</p>
                     </div>
                     <Button variant="ghost" size="icon" onClick={copyRoomId}>
                       <Copy className="w-4 h-4" />
@@ -121,20 +190,16 @@ export default function Home() {
                   <Button
                     variant="ghost"
                     className="w-full flex items-center justify-between"
-                    onClick={() => setShowQR(!showQR)}
                   >
                     <span>QR Code</span>
-                    {showQR ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </Button>
 
-                  {showQR && (
-                    <div className="pt-2">
-                      <QRCode
-                        value={shareUrl}
-                        title="Scan to Join Chat"
-                      />
-                    </div>
-                  )}
+                  <div className="pt-2">
+                    <QRCode
+                      value={shareUrl}
+                      title="Scan to Join Chat"
+                    />
+                  </div>
                 </div>
               </Card>
             ) : (
@@ -156,25 +221,14 @@ export default function Home() {
                   onChange={(e) => setJoinRoomId(e.target.value)}
                   placeholder="Enter room ID"
                 />
-                <div className="grid grid-cols-2 gap-3">
-                  <Button 
-                    onClick={(e) => joinRoom(e, 'chat')} 
-                    className="w-full" 
-                    disabled={!joinRoomId.trim()}
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Join Chat
-                  </Button>
-                  <Button 
-                    onClick={(e) => joinRoom(e, 'listen')} 
-                    className="w-full" 
-                    disabled={!joinRoomId.trim()}
-                    variant="outline"
-                  >
-                    <Headphones className="h-4 w-4 mr-2" />
-                    Join Listen
-                  </Button>
-                </div>
+                <Button 
+                  onClick={joinRoom} 
+                  className="w-full" 
+                  disabled={!joinRoomId.trim()}
+                >
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Join Chat
+                </Button>
               </form>
             </Card>
           </div>
