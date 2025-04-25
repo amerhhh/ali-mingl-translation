@@ -220,7 +220,14 @@ export default function Listen() {
     const initializeChat = async () => {
       setIsLoading(true);
       try {
+        // Clear messages first to prevent duplicates
+        clearMessages();
+        // Then load stored messages
         await loadStoredMessages();
+        // Force reconnect to ensure we get latest messages
+        if (isConnected) {
+          reconnect();
+        }
       } catch (err) {
         console.error('Failed to load messages:', err);
         setError('Failed to load chat history');

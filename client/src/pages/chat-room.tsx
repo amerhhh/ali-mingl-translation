@@ -189,7 +189,14 @@ export default function ChatRoom() {
     const initializeChat = async () => {
       setIsLoading(true);
       try {
+        // Clear messages first to prevent duplicates
+        clearMessages();
+        // Then load stored messages
         await loadStoredMessages();
+        // Force reconnect to ensure we get latest messages
+        if (isConnected) {
+          reconnect();
+        }
         // Clear played message IDs to ensure a clean slate when switching modes
         playedMessageIds.current.clear();
         console.log("Cleared played message tracking on Chat mode initialization");

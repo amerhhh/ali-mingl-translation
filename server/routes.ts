@@ -20,7 +20,7 @@ function broadcast(roomId: string, message: any, exclude?: WebSocket) {
   if (room) {
     console.log(`Broadcasting to room ${roomId}, active clients: ${room.size}`);
     room.forEach(client => {
-      if (client !== exclude && client.readyState === WebSocket.OPEN) {
+      if ((exclude === undefined || client !== exclude) && client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(message));
       }
     });
@@ -73,24 +73,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`Client joined room: ${roomId}, total clients: ${room.size}`);
 
             // Get room history from database
-            const translations = await storage.getTranslations();
-            const roomHistory = translations
-              .filter(t => t.roomId === roomId)
-              .map(t => ({
-                type: 'chat',
-                text: t.sourceText,
-                translatedText: t.targetText,
-                sourceLang: t.sourceLang,
-                targetLang: t.targetLang,
-                timestamp: t.timestamp.toISOString(),
-                temp_user_uuid: t.temp_user_uuid,  // Include UUID
-                user_emoji: t.user_emoji  // Include emoji
-              }));
+            const roomHistory = await storage.getRecentTranslations(roomId, 100);
+            const formattedHistory = roomHistory.map(t => ({
+              type: 'chat',
+              text: t.sourceText,
+              translatedText: t.targetText,
+              sourceLang: t.sourceLang,
+              targetLang: t.targetLang,
+              timestamp: t.timestamp.toISOString(),
+              temp_user_uuid: t.temp_user_uuid,
+              user_emoji: t.user_emoji
+            }));
 
             ws.send(JSON.stringify({
               type: 'joined',
               roomId,
-              history: roomHistory,
+              history: formattedHistory,
               success: true
             }));
             break;
@@ -205,8 +203,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Broadcast clear message to all clients in the room
               broadcast(roomToClear, {
                 type: 'room_cleared',
-                roomId: roomToClear
+                roomId: roomToClear,
+                timestamp: new Date().toISOString()
               });
+              
+              // Confirm to the requester that the room was cleared
+              ws.send(JSON.stringify({
+                type: 'room_cleared_confirmed',
+                roomId: roomToClear,
+                success: true
+              }));
+              
+              console.log(`Room ${roomToClear} cleared successfully, notification sent to all clients`);
             } catch (error) {
               console.error('Failed to clear room:', error);
               ws.send(JSON.stringify({

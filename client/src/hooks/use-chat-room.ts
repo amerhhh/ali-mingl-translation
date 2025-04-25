@@ -46,6 +46,21 @@ const getRandomEmoji = (): UserEmoji => {
   return availableEmojis[index];
 };
 
+// Helper function to deduplicate messages by content and timestamp
+const deduplicateMessages = (messages: Message[]): Message[] => {
+  const unique = new Map<string, Message>();
+  
+  messages.forEach(msg => {
+    // Create a unique key based on content and timestamp
+    const key = `${msg.text}|${msg.translatedText}|${msg.timestamp}|${msg.temp_user_uuid}`;
+    if (!unique.has(key)) {
+      unique.set(key, msg);
+    }
+  });
+  
+  return Array.from(unique.values());
+};
+
 export function useChatRoom(roomId: string): ChatRoom {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -82,6 +97,8 @@ export function useChatRoom(roomId: string): ChatRoom {
   const reconnectAttempts = useRef(0);
   const MAX_RECONNECT_ATTEMPTS = 5;
   const [socket, setSocket] = useState<WebSocket | null>(null);
+  const playedMessageIds = useRef<Set<string>>(new Set());
+  const lastSentMessage = useRef<{text: string, timestamp: number, targetLang: string} | null>(null);
 
   // Load stored messages and restore user identity
   const loadStoredMessages = useCallback(async () => {
@@ -91,8 +108,16 @@ export function useChatRoom(roomId: string): ChatRoom {
         const parsedMessages = JSON.parse(stored);
         console.log('Loading stored messages:', parsedMessages);
 
+        // Deduplicate the stored messages
+        const uniqueMessages = deduplicateMessages(parsedMessages);
+        if (uniqueMessages.length !== parsedMessages.length) {
+          console.log(`Removed ${parsedMessages.length - uniqueMessages.length} duplicate messages from local storage`);
+          // Update localStorage with deduplicated messages
+          localStorage.setItem(`messages_${roomId}`, JSON.stringify(uniqueMessages));
+        }
+
         // Find any previous messages from this user's cookie UUID
-        const userMessages = parsedMessages.filter((msg: Message) => msg.temp_user_uuid === userId);
+        const userMessages = uniqueMessages.filter((msg: Message) => msg.temp_user_uuid === userId);
 
         if (userMessages.length > 0) {
           const lastMessage = userMessages[userMessages.length - 1];
@@ -109,13 +134,8 @@ export function useChatRoom(roomId: string): ChatRoom {
           }
         }
 
-        // Only set messages if they're empty, to prevent duplicates when switching modes
-        setMessages(prevMessages => {
-          if (prevMessages.length === 0) {
-            return parsedMessages;
-          }
-          return prevMessages;
-        });
+        // Set messages from localStorage (will be replaced by server history if available)
+        setMessages(uniqueMessages);
       }
     } catch (error) {
       console.error('Failed to load stored messages:', error);
@@ -215,17 +235,20 @@ export function useChatRoom(roomId: string): ChatRoom {
                 console.log('Successfully joined room:', message.roomId);
                 if (message.history && Array.isArray(message.history)) {
                   console.log('Received room history:', message.history);
-                  // Only set messages from history if we don't already have them
-                  setMessages(prevMessages => {
-                    // If we already have messages (from localStorage or previous connection), don't replace them
-                    if (prevMessages.length > 0) {
-                      console.log('Already have messages, not replacing from server history');
-                      return prevMessages;
+                  
+                  // Always use server history as the source of truth
+                  if (message.history.length > 0) {
+                    // Deduplicate the history messages from the server
+                    const uniqueMessages = deduplicateMessages(message.history);
+                    
+                    if (uniqueMessages.length !== message.history.length) {
+                      console.log(`Removed ${message.history.length - uniqueMessages.length} duplicate messages from server history`);
                     }
+                    
                     console.log('Setting messages from server history');
-                    localStorage.setItem(`messages_${roomId}`, JSON.stringify(message.history));
-                    return message.history;
-                  });
+                    setMessages(uniqueMessages);
+                    localStorage.setItem(`messages_${roomId}`, JSON.stringify(uniqueMessages));
+                  }
                 }
               }
               break;
@@ -249,21 +272,22 @@ export function useChatRoom(roomId: string): ChatRoom {
                 translatedText: newMessage.translatedText.substring(0, 30) + '...'
               });
               setMessages(prev => {
-                // Check if this message is already in the list to prevent duplicates
-                // More robust duplicate detection that doesn't rely solely on timestamp string comparison
+                // Enhanced duplicate detection that checks all message properties
                 const isDuplicate = prev.some(
                   msg => 
                     msg.text === newMessage.text && 
+                    msg.translatedText === newMessage.translatedText &&
                     msg.temp_user_uuid === newMessage.temp_user_uuid &&
-                    (
-                      // Same exact timestamp or within 5 seconds (for minute boundary cases)
-                      msg.timestamp === newMessage.timestamp ||
-                      Math.abs(new Date(msg.timestamp).getTime() - new Date(newMessage.timestamp).getTime()) < 5000
-                    )
+                    msg.targetLang === newMessage.targetLang &&
+                    // Exact timestamp comparison
+                    msg.timestamp === newMessage.timestamp
                 );
                 
                 if (isDuplicate) {
-                  console.log('Duplicate message detected, not adding again');
+                  console.log('Duplicate message detected, not adding again:', {
+                    text: newMessage.text.substring(0, 20),
+                    timestamp: newMessage.timestamp
+                  });
                   return prev;
                 }
                 
@@ -288,21 +312,22 @@ export function useChatRoom(roomId: string): ChatRoom {
               };
               console.log('Adding new OpenAI transcription to chat:', openAIMessage);
               setMessages(prev => {
-                // Check if this message is already in the list to prevent duplicates
-                // More robust duplicate detection that doesn't rely solely on timestamp string comparison
+                // Enhanced duplicate detection that checks all message properties
                 const isDuplicate = prev.some(
                   msg => 
                     msg.text === openAIMessage.text && 
+                    msg.translatedText === openAIMessage.translatedText &&
                     msg.temp_user_uuid === openAIMessage.temp_user_uuid &&
-                    (
-                      // Same exact timestamp or within 5 seconds (for minute boundary cases)
-                      msg.timestamp === openAIMessage.timestamp ||
-                      Math.abs(new Date(msg.timestamp).getTime() - new Date(openAIMessage.timestamp).getTime()) < 5000
-                    )
+                    msg.targetLang === openAIMessage.targetLang &&
+                    // Exact timestamp comparison
+                    msg.timestamp === openAIMessage.timestamp
                 );
                 
                 if (isDuplicate) {
-                  console.log('Duplicate OpenAI transcription detected, not adding again');
+                  console.log('Duplicate OpenAI transcription detected, not adding again:', {
+                    text: openAIMessage.text.substring(0, 20),
+                    timestamp: openAIMessage.timestamp
+                  });
                   return prev;
                 }
                 
@@ -310,6 +335,19 @@ export function useChatRoom(roomId: string): ChatRoom {
                 localStorage.setItem(`messages_${roomId}`, JSON.stringify(updated));
                 return updated;
               });
+              break;
+
+            case 'room_cleared':
+              console.log(`Received room_cleared notification for room: ${message.roomId}`);
+              // Clear messages and local storage for this room
+              setMessages([]);
+              localStorage.removeItem(`messages_${roomId}`);
+              // Clear the played messages tracking
+              playedMessageIds.current.clear();
+              break;
+            
+            case 'room_cleared_confirmed':
+              console.log(`Room cleared confirmation received for room: ${message.roomId}`);
               break;
 
             case 'error':
@@ -367,6 +405,23 @@ export function useChatRoom(roomId: string): ChatRoom {
   ) => {
     if (!text.trim() || !roomId) return;
 
+    // Check for duplicate messages within a short timeframe (3 seconds)
+    const now = Date.now();
+    if (lastSentMessage.current && 
+        lastSentMessage.current.text === text && 
+        lastSentMessage.current.targetLang === targetLang &&
+        now - lastSentMessage.current.timestamp < 3000) {
+      console.log('Duplicate message detected within 3 seconds - not sending again:', text.substring(0, 30));
+      return;
+    }
+
+    // Update last sent message
+    lastSentMessage.current = {
+      text,
+      timestamp: now,
+      targetLang
+    };
+
     console.log('Attempting to send message:', { 
       text: text.substring(0, 30) + '...', 
       sourceLang, 
@@ -423,6 +478,9 @@ export function useChatRoom(roomId: string): ChatRoom {
     setMessages([]);
     localStorage.removeItem(`messages_${roomId}`);
     
+    // Clear the played messages tracking
+    playedMessageIds.current.clear();
+    
     // Send clear-room message to server if connected
     if (socket?.readyState === WebSocket.OPEN) {
       const clearMessage = {
@@ -430,14 +488,20 @@ export function useChatRoom(roomId: string): ChatRoom {
         roomId
       };
       socket.send(JSON.stringify(clearMessage));
+      console.log('Sent clear_room message to server');
+    } else {
+      console.warn('WebSocket not connected, could not send clear_room message');
+      // Show a warning to the user that other devices might not see the changes immediately
+      toast({
+        variant: "destructive",
+        title: "Connection Issue",
+        description: "Messages cleared locally, but other devices might not be updated until reconnected."
+      });
     }
-  }, [socket, roomId]);
+  }, [socket, roomId, toast]);
 
   const reconnect = useCallback(() => {
     console.log('Manually reconnecting...');
-    
-    // When manually reconnecting, we should keep the existing messages to prevent duplicates
-    // We don't need to clear or reload messages here
     
     // Reset reconnection attempts counter
     reconnectAttempts.current = 0;
@@ -452,6 +516,9 @@ export function useChatRoom(roomId: string): ChatRoom {
     
     // Attempt to connect
     connect();
+    
+    // Clear playedMessageIds to ensure they're not tracked across reconnections
+    playedMessageIds.current.clear();
   }, [connect, socket]);
 
   // Store emoji whenever it changes
@@ -462,7 +529,16 @@ export function useChatRoom(roomId: string): ChatRoom {
 
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem(`messages_${roomId}`, JSON.stringify(messages));
+      // Deduplicate before saving to localStorage
+      const uniqueMessages = deduplicateMessages(messages);
+      if (uniqueMessages.length !== messages.length) {
+        console.log(`Removed ${messages.length - uniqueMessages.length} duplicate messages before saving to localStorage`);
+        // Update state silently if we found duplicates
+        setTimeout(() => {
+          setMessages(uniqueMessages);
+        }, 0);
+      }
+      localStorage.setItem(`messages_${roomId}`, JSON.stringify(uniqueMessages));
     }
   }, [messages, roomId]);
 

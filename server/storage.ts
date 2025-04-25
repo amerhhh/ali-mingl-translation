@@ -62,6 +62,25 @@ export class DatabaseStorage implements IStorage {
       if (!db) {
         throw new Error("Database not available");
       }
+      
+      // Check for potential duplicates before inserting
+      // Get recent translations for this room
+      const recentTranslations = await this.getRecentTranslations(dataToInsert.roomId, 10);
+      
+      // Check if this exact message was recently stored (within last 5 seconds)
+      const now = new Date().getTime();
+      const potentialDuplicate = recentTranslations.find(t => 
+        t.sourceText === dataToInsert.sourceText &&
+        t.targetText === dataToInsert.targetText &&
+        t.temp_user_uuid === dataToInsert.temp_user_uuid &&
+        // Within last 5 seconds
+        (now - t.timestamp.getTime() < 5000)
+      );
+      
+      if (potentialDuplicate) {
+        console.log('Detected potential duplicate message, returning existing translation');
+        return potentialDuplicate;
+      }
 
       const [result] = await db.insert(translations).values(dataToInsert).returning();
       console.log("Translation saved to database:", {
@@ -105,23 +124,61 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getRecentTranslations(roomId: string, limit: number = 10): Promise<Translation[]> {
+  async getRecentTranslations(roomId: string, limit: number = 100): Promise<Translation[]> {
     try {
       if (!db) {
         throw new Error("Database not available");
       }
       
-      return db
+      const result = await db
         .select()
         .from(translations)
         .where(eq(translations.roomId, roomId))
         .orderBy(desc(translations.timestamp))
         .limit(limit);
+      
+      // Deduplicate messages
+      const uniqueMessagesMap = new Map<string, Translation>();
+      result.forEach(t => {
+        // Create a key based on content and timestamp
+        const key = `${t.sourceText}|${t.targetText}|${t.timestamp.toISOString()}|${t.temp_user_uuid}`;
+        if (!uniqueMessagesMap.has(key)) {
+          uniqueMessagesMap.set(key, t);
+        }
+      });
+      
+      const uniqueMessages = Array.from(uniqueMessagesMap.values());
+      
+      // If we removed duplicates, log it
+      if (uniqueMessages.length < result.length) {
+        console.log(`Removed ${result.length - uniqueMessages.length} duplicate messages from database query for room ${roomId}`);
+      }
+      
+      // Return messages in chronological order (oldest first)
+      return uniqueMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
     } catch (error) {
       console.warn("Database unavailable for recent translations, using memory storage");
-      return this.memoryStore
-        .filter(t => t.roomId === roomId)
-        .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      
+      // Apply same deduplication logic to memory store
+      const messagesFromMemory = this.memoryStore.filter(t => t.roomId === roomId);
+      const uniqueMessagesMap = new Map<string, Translation>();
+      
+      messagesFromMemory.forEach(t => {
+        const key = `${t.sourceText}|${t.targetText}|${t.timestamp.toISOString()}|${t.temp_user_uuid}`;
+        if (!uniqueMessagesMap.has(key)) {
+          uniqueMessagesMap.set(key, t);
+        }
+      });
+      
+      const uniqueMessages = Array.from(uniqueMessagesMap.values());
+      
+      // If we removed duplicates, log it
+      if (uniqueMessages.length < messagesFromMemory.length) {
+        console.log(`Removed ${messagesFromMemory.length - uniqueMessages.length} duplicate messages from memory store for room ${roomId}`);
+      }
+      
+      return uniqueMessages
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()) // Oldest first
         .slice(0, limit);
     }
   }
