@@ -192,6 +192,30 @@ export default function Listen() {
   // Listen-specific transcript handler that focuses on target language translation
   const handleListenTranscript = async (text: string, isFinal: boolean) => {
     if (text.trim()) {
+      // Check for duplicate messages in listen mode
+      if (isFinal) {
+        // Create a message fingerprint
+        const messageKey = `${text}`;
+        
+        // Use a shared global cache for listen mode handler calls
+        const processedHandlerCalls = (window as any).__listenModeHandlerCalls = (window as any).__listenModeHandlerCalls || {};
+        
+        // Create a timestamp-based key to allow messages to be processed again after 10 seconds
+        // This prevents accidental blocking of legitimate repeated phrases
+        const timeKey = Math.floor(Date.now() / 10000); // Changes every 10 seconds
+        const dedupKey = `${messageKey}-${timeKey}`;
+        
+        // Check if we've seen this exact text recently in listen mode
+        if (processedHandlerCalls[dedupKey]) {
+          console.log(`[Listen] BLOCKING duplicate transcript handler call:`, text.substring(0, 30) + "...");
+          return;
+        }
+        
+        // Mark it as processed to prevent duplicate processing in this time window
+        processedHandlerCalls[dedupKey] = true;
+        console.log(`[Listen] First time handling this transcript in current time window:`, text.substring(0, 30) + "...");
+      }
+      
       setCurrentTranslation({
         sourceText: text,
         targetText: isFinal ? "" : "Translating...",

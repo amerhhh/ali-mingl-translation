@@ -355,6 +355,28 @@ export function SpeechInput({
               });
             }
             
+            // Check if we're in listen mode
+            const isListenPage = window.location.pathname.includes('/listen');
+            
+            // For listen mode, use persistent tracking to completely prevent duplication
+            if (isListenPage) {
+              // Create a message fingerprint
+              const messageKey = `${message.text}-${message.translatedText}`;
+              
+              // Use a shared global cache for listen mode messages
+              const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
+              
+              // Check if we've seen this message before in listen mode
+              if (processedMessages[messageKey]) {
+                console.log(`[WebSpeech] BLOCKING duplicate transcript in listen mode:`, message.text.substring(0, 30) + "...");
+                return;
+              }
+              
+              // Mark it as processed to prevent duplicate processing
+              processedMessages[messageKey] = true;
+              console.log(`[WebSpeech] First time processing transcript in listen mode:`, message.text.substring(0, 30) + "...");
+            }
+            
             // IMPORTANT: For WebSpeech, make sure we're sending the original transcript text
             // rather than just calling onTranscriptChange with the final text.
             // This ensures the chat component gets both the original text and translation
@@ -405,6 +427,28 @@ export function SpeechInput({
       
       // For WebSpeech, store the source text in window for matching with translations
       if (!useOpenAI && transcriptResult.isFinal && transcriptResult.finalText) {
+        // Check if we're in listen mode
+        const isListenPage = window.location.pathname.includes('/listen');
+        
+        // For listen mode, use persistent tracking to completely prevent duplication
+        if (isListenPage) {
+          // Create a message fingerprint
+          const messageKey = `${transcriptResult.finalText}`;
+          
+          // Use a shared global cache for listen mode messages
+          const processedMessages = (window as any).__listenModeTranscriptsSent = (window as any).__listenModeTranscriptsSent || {};
+          
+          // Check if we've seen this message before in listen mode
+          if (processedMessages[messageKey]) {
+            console.log(`[WebSpeech] BLOCKING duplicate transcript send in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
+            return;
+          }
+          
+          // Mark it as processed to prevent duplicate sending
+          processedMessages[messageKey] = true;
+          console.log(`[WebSpeech] First time sending transcript in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
+        }
+        
         // Store the source text in the window to mimic OpenAI format
         if (!window.__openAIRawTranscription) {
           window.__openAIRawTranscription = {
