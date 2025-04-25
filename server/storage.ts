@@ -44,7 +44,9 @@ export class DatabaseStorage implements IStorage {
         sourceLang: translation.sourceLang || "en",
         temp_user_uuid: translation.temp_user_uuid || uuidv4(),
         user_emoji: translation.user_emoji || "🌟",
-        voiceType: translation.voiceType || "female"
+        voiceType: translation.voiceType || "female",
+        // Use provided timestamp or create a new one (prevents duplicate messages at minute boundaries)
+        timestamp: translation.timestamp || new Date()
       };
 
       if (!dataToInsert.temp_user_uuid) {
@@ -53,7 +55,8 @@ export class DatabaseStorage implements IStorage {
 
       console.log('Attempting to insert translation with:', {
         temp_user_uuid: dataToInsert.temp_user_uuid,
-        user_emoji: dataToInsert.user_emoji
+        user_emoji: dataToInsert.user_emoji,
+        timestamp: dataToInsert.timestamp
       });
 
       if (!db) {
@@ -74,7 +77,7 @@ export class DatabaseStorage implements IStorage {
       const newTranslation = {
         ...translation,
         id: Date.now(),
-        timestamp: new Date(),
+        timestamp: translation.timestamp || new Date(),
         sourceLang: translation.sourceLang || "en",
         temp_user_uuid: translation.temp_user_uuid || uuidv4(),
         user_emoji: translation.user_emoji || "🌟",

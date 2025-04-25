@@ -561,13 +561,13 @@ export function SpeechInput({
         if (!window.__openAIRawTranscription) {
           window.__openAIRawTranscription = {
             sourceText: transcriptResult.finalText,
-            translatedText: 'Translating...',
+            translatedText: '',
             isComplete: false,
             isSourceComplete: true // Mark source as complete for WebSpeech
           };
         } else {
           window.__openAIRawTranscription.sourceText = transcriptResult.finalText;
-          window.__openAIRawTranscription.translatedText = 'Translating...';
+          window.__openAIRawTranscription.translatedText = '';
           window.__openAIRawTranscription.isComplete = false;
           window.__openAIRawTranscription.isSourceComplete = true; // Mark source as complete for WebSpeech
         }

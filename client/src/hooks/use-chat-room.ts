@@ -250,11 +250,16 @@ export function useChatRoom(roomId: string): ChatRoom {
               });
               setMessages(prev => {
                 // Check if this message is already in the list to prevent duplicates
+                // More robust duplicate detection that doesn't rely solely on timestamp string comparison
                 const isDuplicate = prev.some(
                   msg => 
                     msg.text === newMessage.text && 
-                    msg.timestamp === newMessage.timestamp &&
-                    msg.temp_user_uuid === newMessage.temp_user_uuid
+                    msg.temp_user_uuid === newMessage.temp_user_uuid &&
+                    (
+                      // Same exact timestamp or within 5 seconds (for minute boundary cases)
+                      msg.timestamp === newMessage.timestamp ||
+                      Math.abs(new Date(msg.timestamp).getTime() - new Date(newMessage.timestamp).getTime()) < 5000
+                    )
                 );
                 
                 if (isDuplicate) {
@@ -284,11 +289,16 @@ export function useChatRoom(roomId: string): ChatRoom {
               console.log('Adding new OpenAI transcription to chat:', openAIMessage);
               setMessages(prev => {
                 // Check if this message is already in the list to prevent duplicates
+                // More robust duplicate detection that doesn't rely solely on timestamp string comparison
                 const isDuplicate = prev.some(
                   msg => 
                     msg.text === openAIMessage.text && 
-                    msg.timestamp === openAIMessage.timestamp &&
-                    msg.temp_user_uuid === openAIMessage.temp_user_uuid
+                    msg.temp_user_uuid === openAIMessage.temp_user_uuid &&
+                    (
+                      // Same exact timestamp or within 5 seconds (for minute boundary cases)
+                      msg.timestamp === openAIMessage.timestamp ||
+                      Math.abs(new Date(msg.timestamp).getTime() - new Date(openAIMessage.timestamp).getTime()) < 5000
+                    )
                 );
                 
                 if (isDuplicate) {

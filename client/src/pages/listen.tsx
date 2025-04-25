@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,6 +51,25 @@ import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
+// Declare global window properties for TypeScript
+declare global {
+  interface Window {
+    __openAIRawTranscription: {
+      sourceText: string;
+      translatedText: string;
+      isComplete: boolean;
+      isSourceComplete?: boolean;
+    };
+    __speechInputTracking?: {
+      isListening: boolean;
+      currentLanguage: string;
+      usingOpenAI: boolean;
+      lastToggleTime: number;
+      preventLanguageEffectTrigger: boolean;
+    };
+  }
+}
+
 // Helper function to get the full language code for speech synthesis
 const getLanguageCode = (lang: LanguageCode) => {
   const languageCodes: Record<LanguageCode, string> = {
@@ -81,7 +100,7 @@ const defaultUiText = {
   joinRoom: "Join Room",
   speakNow: "Start listening to {sourceLang} to see translation",
   translating: "Translating...",
-  startConversation: "Start listening to {sourceLang} to see translation",
+  startConversation: "Start speaking in {sourceLang} to see translation",
   playAudio: "Play Audio",
   playing: "Playing...",
   iosNotice: "📱 On iOS devices: First tap anywhere on the screen, then click the 'Play Audio' button next to the translated text",
@@ -93,7 +112,7 @@ const defaultUiText = {
   on: "On",
   off: "Off",
   enterRoomId: "Enter room ID",
-  replayTranslated: "Play my translated words",
+  replayTranslated: "Play translated words",
   scanToChat: "Scan to Chat With Me in",
   inputDevice: "Input Device",
   outputDevice: "Output Device",
@@ -128,6 +147,15 @@ export default function Listen() {
   const roomIdFromQuery = urlSearchParams.get('id') || '';
   const currentRoomId = params?.id || roomIdFromQuery || '';
   const [, setLocation] = useLocation();
+
+  // Add a session start timestamp to track when the Listen page was loaded
+  const sessionStartTime = useRef(Date.now());
+  
+  // Reset the session timestamp when the room ID changes
+  useEffect(() => {
+    sessionStartTime.current = Date.now();
+    console.log(`Listen page: Session start time reset to ${new Date(sessionStartTime.current).toLocaleTimeString()} for room ${currentRoomId}`);
+  }, [currentRoomId]);
 
   const getInitialLanguages = () => {
     const deviceLang = navigator.language.split('-')[0].toLowerCase();
@@ -265,7 +293,7 @@ export default function Listen() {
       
       setCurrentTranslation({
         sourceText: text,
-        targetText: isFinal ? "" : "Translating...",
+        targetText: isFinal ? "" : "...",
         sourceLang,
         targetLang,
         isPartial: !isFinal
@@ -276,8 +304,32 @@ export default function Listen() {
           await sendMessage(text, sourceLang, targetLang);
           setCurrentTranslation(null);
           
-          // Automatically play the target language translation
-          // We'll let the useEffect for new messages handle the speech
+          // Access the global OpenAI raw transcription which should have the most recent translation
+          const openAITranscription = window.__openAIRawTranscription;
+          if (openAITranscription && openAITranscription.translatedText) {
+            // Remove any "translate them" or similar phrases from the text
+            const filteredText = openAITranscription.translatedText
+              .replace(/translate them/gi, "")
+              .replace(/translation:/gi, "")
+              .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+              .trim();
+            
+            // Skip playback if the filtered text is empty or just contains ellipsis or spaces
+            if (!filteredText || filteredText.trim() === "..." || filteredText.trim() === "") {
+              console.log("Skipping playback for empty or placeholder text after filtering");
+              return;
+            }
+            
+            console.log("Found OpenAI translation, playing audio immediately:", filteredText.substring(0, 30) + "...");
+            
+            // Store this timestamp to prevent duplicate playback
+            (window as any).__lastPlayedTranscriptTimestamp = Date.now();
+            
+            handlePlayTranslation(filteredText, targetLang, false);
+          } else {
+            console.log("No OpenAI translation found for immediate playback");
+            // The message will still be played by the messages useEffect when the server sends it back
+          }
         } catch (error) {
           console.error('Failed to send message:', error);
           toast({
@@ -294,11 +346,28 @@ export default function Listen() {
   const handlePlayTranslation = (text: string, lang: LanguageCode, ignoreMainSpeaker: boolean = false) => {
     if (!isInitialized) return;
     
-    console.log(`Listen page: PlayTranslation called: text="${text.substring(0, 20)}...", lang=${lang}, ignoreMainSpeaker=${ignoreMainSpeaker}`);
+    // Remove any "translate them" or similar phrases from the text
+    const filteredText = text
+      .replace(/translate them/gi, "")
+      .replace(/translation:/gi, "")
+      .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+      .trim();
+    
+    // Skip playback if the filtered text is empty or just contains ellipsis or spaces
+    if (!filteredText || filteredText.trim() === "..." || filteredText.trim() === "") {
+      console.log(`Listen page: Skipping playback for empty or placeholder text`);
+      return;
+    }
+    
+    console.log(`Listen page: PlayTranslation called: text="${filteredText.substring(0, 20)}...", lang=${lang}, ignoreMainSpeaker=${ignoreMainSpeaker}`);
 
-    // MODIFIED: Prevent any playback in Listen mode
-    console.log(`Listen page: Playback is disabled in Listen mode`);
-    return;
+    // Enable playback in Listen mode
+    if (filteredText && speakerEnabled) {
+      console.log(`Listen page: Playing audio in target language: ${targetLang}`);
+      speak(filteredText, getLanguageCode(lang), true);
+    } else {
+      console.log(`Listen page: Playback skipped, speaker enabled: ${speakerEnabled}`);
+    }
   };
 
   useEffect(() => {
@@ -367,21 +436,65 @@ export default function Listen() {
     if (isInitialized && latestMessage && speakerEnabled) {
       console.log("Listen page: New message detected, checking for playback:", latestMessage);
       
-      // MODIFIED: Disable auto-playing of any recorded messages in Listen mode
-      // This ensures no recordings from the database are played
-      console.log("Listen page: Auto-playback of recorded messages is disabled in Listen mode");
-      return;
-
-      /* Original code disabled
+      // Check if the message was created after the session started
+      const messageTime = new Date(latestMessage.timestamp).getTime();
+      const messageTimeFormatted = new Date(messageTime).toISOString();
+      const sessionStartFormatted = new Date(sessionStartTime.current).toISOString();
+      
+      if (messageTime < sessionStartTime.current) {
+        console.log(`Listen page: Skipping message from previous session/different mode:
+        - Message timestamp: ${messageTimeFormatted}
+        - Session started: ${sessionStartFormatted}
+        - Message source: ${latestMessage.sourceLang}, target: ${latestMessage.targetLang}
+        - Message text: "${latestMessage.translatedText.substring(0, 30)}..."`);
+        return;
+      }
+      
+      console.log(`Listen page: Processing new message created in current session:
+      - Message timestamp: ${messageTimeFormatted}
+      - Session started: ${sessionStartFormatted}
+      - Message age: ${Math.floor((Date.now() - messageTime) / 1000)}s ago`);
+      
+      // Enable auto-playing of messages in Listen mode
       // In Listen mode, always play the target language translation
       if (latestMessage.targetLang === targetLang) {
         // Use a slight delay to ensure the DOM has updated
         setTimeout(() => {
-          console.log("Listen page: Playing latest message translation");
-          handlePlayTranslation(latestMessage.translatedText, latestMessage.targetLang as LanguageCode, true);
+          // Check if we're using webspeech (if it's not OpenAI)
+          const usingWebSpeech = !(latestMessage.isOpenAI === true);
+          
+          // Check if the text contains any special phrases we want to filter out
+          const filteredText = latestMessage.translatedText
+            .replace(/translate them/gi, "")
+            .replace(/translation:/gi, "")
+            .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+            .trim();
+          
+          // Skip if the text is empty or just contains placeholder text after filtering
+          if (!filteredText || filteredText === "..." || filteredText === "") {
+            console.log("Listen page: Skipping empty or placeholder message");
+            return;
+          }
+          
+          if (usingWebSpeech) {
+            // For WebSpeech mode, we need to play the audio through the useEffect
+            console.log("Listen page: Playing latest WebSpeech message translation");
+            handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
+          } else {
+            // For OpenAI mode, we might still need to play it if it wasn't already played
+            console.log("Listen page: OpenAI message detected, checking if it needs to be played");
+            // Get the timestamp from the message
+            const messageTime = new Date(latestMessage.timestamp).getTime();
+            // Get the current time
+            const currentTime = Date.now();
+            // If the message is recent (less than 3 seconds old), don't play it again as it was likely
+            // already played via the raw transcription handler
+            if (currentTime - messageTime > 3000) {
+              handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
+            }
+          }
         }, 150);
       }
-      */
     }
   }, [messages, speakerEnabled, isInitialized, targetLang]);
 
@@ -945,7 +1058,7 @@ export default function Listen() {
                       </span>
                     </div>
                     <p className="text-muted-foreground">
-                      {currentTranslation.targetText || uiText.translating}
+                      {currentTranslation.targetText}
                       {currentTranslation.isPartial && (
                         <span className="inline-block animate-pulse ml-1">...</span>
                       )}

@@ -39,7 +39,8 @@ export const insertTranslationSchema = createInsertSchema(translations).pick({
   roomId: true,
   temp_user_uuid: true,
   user_emoji: true,
-  voiceType: true
+  voiceType: true,
+  timestamp: true
 });
 
 export type InsertTranslation = z.infer<typeof insertTranslationSchema>;

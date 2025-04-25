@@ -121,21 +121,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   user_emoji: message.user_emoji
                 });
 
+                // Broadcast to all clients in the room
+                console.log('Broadcasting stored message to room:', currentRoom);
+                
+                // Create a consistent timestamp at the server level to avoid minute boundary issues
+                const timestamp = new Date().toISOString();
+                
                 const chatMessage = {
                   type: 'chat',
                   text: message.text,
                   translatedText: message.translatedText,
                   sourceLang: message.sourceLang || "en",
                   targetLang: message.targetLang,
-                  timestamp: savedTranslation.timestamp.toISOString(),
+                  timestamp: timestamp, // Use server-generated timestamp
                   roomId: currentRoom,
                   temp_user_uuid: message.temp_user_uuid,
                   user_emoji: message.user_emoji,
                   isOpenAI: message.isOpenAI
                 };
-
-                // Broadcast to all clients in the room
-                console.log('Broadcasting stored message to room:', currentRoom);
+                
                 broadcast(currentRoom, chatMessage, ws);
               } else {
                 // If no translatedText, this is a new message that needs translation
@@ -143,6 +147,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   message.text,
                   message.targetLang
                 );
+
+                // Create a consistent timestamp at the server level
+                const timestamp = new Date().toISOString();
 
                 // Include temp_user_uuid, user_emoji, and voiceType in savedTranslation
                 const savedTranslation = await storage.addTranslation({
@@ -153,7 +160,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   roomId: currentRoom,
                   temp_user_uuid: message.temp_user_uuid, // Pass through the UUID
                   user_emoji: message.user_emoji, // Pass through the emoji
-                  voiceType: message.voiceType || "female" // Use provided voiceType or default to female
+                  voiceType: message.voiceType || "female", // Use provided voiceType or default to female
+                  timestamp: new Date(timestamp) // Use consistent timestamp
                 });
 
                 const chatMessage = {
@@ -162,7 +170,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   translatedText,
                   sourceLang: message.sourceLang || "en",
                   targetLang: message.targetLang,
-                  timestamp: savedTranslation.timestamp.toISOString(),
+                  timestamp: timestamp, // Use consistent timestamp for WebSocket message
                   roomId: currentRoom,
                   temp_user_uuid: savedTranslation.temp_user_uuid,
                   user_emoji: savedTranslation.user_emoji,

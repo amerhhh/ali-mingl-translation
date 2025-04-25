@@ -94,7 +94,7 @@ const Message = memo(({ message, onPlayTranslation, isSpeaking }: {
             )}>{message.targetText}</p>
             <div className="flex items-center justify-between">
               <time className="text-xs text-white/80">
-                {formatRelative(message.timestamp, new Date())}
+                {format(message.timestamp, "HH:mm:ss")}
               </time>
               <Button
                 variant="ghost"
@@ -135,10 +135,8 @@ export function ChatMessages({
   let previousDate = '';
 
   messages.forEach((message, index) => {
-    const messageDate = formatRelative(
-      message.timestamp,
-      new Date()
-    ).split(' at ')[0];
+    // Use a more consistent approach to get the message date - get day of month
+    const messageDate = new Date(message.timestamp).toDateString();
     
     // Start a new group if user or date changes
     if (
@@ -235,7 +233,7 @@ export function ChatMessages({
                             )}>{message.targetText}</p>
                             <div className="flex items-center justify-between">
                               <time className="text-xs text-white/80">
-                                {formatRelative(message.timestamp, new Date())}
+                                {format(message.timestamp, "HH:mm:ss")}
                               </time>
                               <div className="flex items-center gap-1">
                                 <span className="text-xs text-white/80">Translation</span>
@@ -288,7 +286,7 @@ export function ChatMessages({
                         </div>
                         <div className="flex justify-between items-center mt-1">
                           <div className="text-xs text-muted-foreground">
-                            {formatRelative(message.timestamp, new Date())}
+                            {format(message.timestamp, "HH:mm:ss")}
                           </div>
                           {!isSource && (
                             <button

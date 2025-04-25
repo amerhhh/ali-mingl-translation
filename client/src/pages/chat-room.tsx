@@ -190,6 +190,9 @@ export default function ChatRoom() {
       setIsLoading(true);
       try {
         await loadStoredMessages();
+        // Clear played message IDs to ensure a clean slate when switching modes
+        playedMessageIds.current.clear();
+        console.log("Cleared played message tracking on Chat mode initialization");
       } catch (err) {
         console.error('Failed to load messages:', err);
         setError('Failed to load chat history');

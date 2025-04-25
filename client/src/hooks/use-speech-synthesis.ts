@@ -6,6 +6,21 @@ export function useSpeechSynthesis() {
   const [isInitialized, setIsInitialized] = useState(false);
   const { toast } = useToast();
   const audioContext = useRef<AudioContext | null>(null);
+  const currentUtterance = useRef<SpeechSynthesisUtterance | null>(null);
+  const speechErrorCount = useRef(0);
+
+  // Function to reset speech synthesis in case of repeated errors
+  const resetSpeechSynthesis = useCallback(() => {
+    if ('speechSynthesis' in window) {
+      console.log('Resetting speech synthesis...');
+      window.speechSynthesis.cancel();
+      // Force the browser to re-initialize the speech synthesis engine
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+      window.speechSynthesis.cancel();
+      // Reset error counter
+      speechErrorCount.current = 0;
+    }
+  }, []);
 
   // Initialize speech synthesis on mount
   useEffect(() => {
@@ -13,8 +28,21 @@ export function useSpeechSynthesis() {
       // Force initialize the speech synthesis
       window.speechSynthesis.cancel();
       setIsInitialized(true);
+      
+      // Initialize with a reset
+      resetSpeechSynthesis();
     }
-  }, []);
+    
+    // Cleanup function to cancel any ongoing speech when component unmounts
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      if (currentUtterance.current) {
+        currentUtterance.current = null;
+      }
+    };
+  }, [resetSpeechSynthesis]);
 
   const speak = useCallback((text: string, lang: string = 'en-US', isManualPlayback: boolean = false) => {
     if (!('speechSynthesis' in window)) {
@@ -28,15 +56,11 @@ export function useSpeechSynthesis() {
     }
 
     try {
-      // Check if we're in Listen mode - if so, block all audio playback
+      // Check if we're in Listen mode - remove the block on audio playback
       const isListenPage = window.location.pathname.includes('/listen');
       if (isListenPage) {
-        console.log('Blocking all audio playback in Listen mode');
-        // Still trigger onend to reset UI state
-        setTimeout(() => {
-          setIsSpeaking(false);
-        }, 100);
-        return;
+        console.log('Allowing audio playback in Listen mode for real-time translation');
+        // Don't return early here - continue with speech synthesis
       }
 
       // Check if we're in Chat mode
@@ -71,9 +95,13 @@ export function useSpeechSynthesis() {
       }
       
       // Cancel any ongoing speech
-      window.speechSynthesis.cancel();
+      if (currentUtterance.current) {
+        window.speechSynthesis.cancel();
+        currentUtterance.current = null;
+      }
 
       const utterance = new SpeechSynthesisUtterance(text);
+      currentUtterance.current = utterance;
 
       // Get available voices
       let voices = window.speechSynthesis.getVoices();
@@ -122,6 +150,10 @@ export function useSpeechSynthesis() {
       // iOS Safari specific setup
       const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       if (isiOS) {
+        // Set a longer timeout for iOS devices before attempting to speak
+        // This helps prevent some "canceled" errors on iOS
+        const iOSTimeout = 300;
+        
         // Resume audio context if needed
         const resumeAudio = () => {
           // Create AudioContext if it doesn't exist
@@ -132,6 +164,9 @@ export function useSpeechSynthesis() {
           if (audioContext.current.state === 'suspended') {
             audioContext.current.resume();
           }
+          
+          // First pause then resume synthesis to ensure it's in a clean state
+          window.speechSynthesis.pause();
           window.speechSynthesis.resume();
         };
 
@@ -163,23 +198,51 @@ export function useSpeechSynthesis() {
       utterance.onend = () => {
         setIsSpeaking(false);
         console.log('Speech ended');
+        // Clear the reference to the utterance when speech ends normally
+        if (currentUtterance.current === utterance) {
+          currentUtterance.current = null;
+        }
       };
 
       utterance.onerror = (event) => {
         console.error('Speech synthesis error:', event);
         setIsSpeaking(false);
-        toast({
-          variant: "destructive",
-          title: "Speech Playback Error",
-          description: "Failed to play audio. Try tapping the play button again."
-        });
+        
+        // Clear the reference to the utterance when speech errors
+        if (currentUtterance.current === utterance) {
+          currentUtterance.current = null;
+        }
+        
+        // Increment error counter
+        speechErrorCount.current += 1;
+        
+        // Reset the speech synthesis if we get too many errors
+        if (speechErrorCount.current >= 3) {
+          resetSpeechSynthesis();
+        }
+        
+        // Only show error toast for errors other than "canceled"
+        // "canceled" errors are common and expected when navigating or starting new speech
+        if (event.error !== "canceled") {
+          toast({
+            variant: "destructive",
+            title: "Speech Playback Error",
+            description: "Failed to play audio. Try tapping the play button again."
+          });
+        } else {
+          // Just log canceled errors without showing a toast
+          console.log('Speech synthesis canceled');
+        }
       };
 
       // Add a small delay for iOS devices
       if (isiOS) {
         setTimeout(() => {
-          window.speechSynthesis.speak(utterance);
-        }, 100);
+          // Double-check that we haven't navigated away or canceled in the meantime
+          if (currentUtterance.current === utterance) {
+            window.speechSynthesis.speak(utterance);
+          }
+        }, 300); // Increased timeout for better reliability
       } else {
         window.speechSynthesis.speak(utterance);
       }
@@ -193,7 +256,7 @@ export function useSpeechSynthesis() {
         description: "Unable to play audio. Please try again."
       });
     }
-  }, [toast]);
+  }, [toast, resetSpeechSynthesis]);
 
   return { speak, isSpeaking, isInitialized };
 }

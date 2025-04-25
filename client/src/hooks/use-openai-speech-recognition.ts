@@ -351,11 +351,19 @@ export function useOpenAISpeechRecognition({
             // Store the stream for later use
             (window as any).__openAIOriginalStream = e.streams[0];
             
-            // MODIFIED: Always set audio source in Listen mode to allow real-time OpenAI voice 
-            // But don't set it in Chat mode unless configured to do so
-            if (isListenPage || !isChatPage) {
+            // UPDATED: Always set audio source in Listen mode to allow real-time OpenAI voice
+            // And don't set it in Chat mode unless configured to do so
+            if (isListenPage) {
               remoteAudioElement.current.srcObject = e.streams[0];
-              console.log('[OpenAI WebRTC] Set audio source for remote audio element in', isListenPage ? 'Listen page' : 'other page');
+              
+              // Set up the audio element for immediate playback in Listen mode
+              remoteAudioElement.current.autoplay = true;
+              remoteAudioElement.current.volume = 1.0;
+              
+              console.log('[OpenAI WebRTC] Set audio source for remote audio element in Listen page to enable real-time translation audio');
+            } else if (!isChatPage) {
+              remoteAudioElement.current.srcObject = e.streams[0];
+              console.log('[OpenAI WebRTC] Set audio source for remote audio element in non-Chat page');
             } else {
               console.log('[OpenAI WebRTC] In Chat page - not setting audio source to prevent voice playback');
               // Don't set the audio source to prevent any playback
@@ -487,8 +495,34 @@ export function useOpenAISpeechRecognition({
                   if (data.delta === '\n') {
                     window.__openAIRawTranscription.isSourceComplete = true;
                   } else if (window.__openAIRawTranscription.isSourceComplete) {
-                    // Add to translation
-                    window.__openAIRawTranscription.translatedText += data.delta;
+                    // Check for trigger phrases that shouldn't be spoken
+                    let delta = data.delta;
+                    
+                    // These are partial deltas, so we need to be careful not to break words
+                    // We'll only filter complete phrases when we see them
+                    if (window.__openAIRawTranscription.translatedText.endsWith("translate ") && delta === "them") {
+                      // Don't add "them" when it follows "translate "
+                      console.log("[OpenAI WebRTC] Filtering out 'them' from 'translate them'");
+                      // Remove the "translate " part from the existing text
+                      window.__openAIRawTranscription.translatedText = 
+                        window.__openAIRawTranscription.translatedText.substring(0, window.__openAIRawTranscription.translatedText.length - 10);
+                    } else if (window.__openAIRawTranscription.translatedText.endsWith("translation") && delta === ":") {
+                      // Don't add ":" when it follows "translation"
+                      console.log("[OpenAI WebRTC] Filtering out ':' from 'translation:'");
+                      // Remove the "translation" part from the existing text
+                      window.__openAIRawTranscription.translatedText = 
+                        window.__openAIRawTranscription.translatedText.substring(0, window.__openAIRawTranscription.translatedText.length - 11);
+                    } else if (window.__openAIRawTranscription.translatedText.endsWith("translating") && 
+                               (delta === " " || delta === "." || delta === "…")) {
+                      // Don't add the space or periods when it follows "translating"
+                      console.log("[OpenAI WebRTC] Filtering out 'translating' word");
+                      // Remove the "translating" part from the existing text
+                      window.__openAIRawTranscription.translatedText = 
+                        window.__openAIRawTranscription.translatedText.substring(0, window.__openAIRawTranscription.translatedText.length - 11);
+                    } else {
+                      // Add to translation
+                      window.__openAIRawTranscription.translatedText += delta;
+                    }
                   } else {
                     // Add to source text
                     window.__openAIRawTranscription.sourceText += data.delta;
@@ -501,22 +535,29 @@ export function useOpenAISpeechRecognition({
                 if (data.transcript) {
                   const parts = data.transcript.split('\n');
                   if (parts.length >= 2) {
+                    // Remove any trigger phrases that shouldn't be spoken
+                    const filteredTranslation = parts[1]
+                      .replace(/translate them/gi, "")
+                      .replace(/translation:/gi, "")
+                      .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+                      .trim();
+
                     window.__openAIRawTranscription = {
                       sourceText: parts[0],
-                      translatedText: parts[1],
+                      translatedText: filteredTranslation,
                       isComplete: true
                     };
 
                     // Also update the lastOpenAIMessage for compatibility
                     window.__lastOpenAIMessage = {
                       text: parts[0],
-                      translatedText: parts[1],
+                      translatedText: filteredTranslation,
                       timestamp: new Date().toISOString()
                     };
 
                     console.log("[OpenAI WebRTC] Complete transcript received:", {
                       source: parts[0],
-                      translation: parts[1]
+                      translation: filteredTranslation
                     });
                   }
                 }
@@ -549,8 +590,30 @@ export function useOpenAISpeechRecognition({
                     
                     // For listen mode, use persistent tracking to completely prevent duplication
                     if (isListenPage) {
+                      // Remove any trigger phrases that shouldn't be spoken
+                      const filteredTranslation = translatedText
+                        .replace(/translate them/gi, "")
+                        .replace(/translation:/gi, "")
+                        .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+                        .trim();
+                      
+                      // Skip if text is empty after filtering
+                      if (!filteredTranslation || filteredTranslation === "..." || filteredTranslation === "") {
+                        console.log("[OpenAI WebRTC] Skipping empty translation after filtering");
+                        
+                        // Reset transcript for next utterance
+                        window.__openAIRawTranscription = {
+                          sourceText: '',
+                          translatedText: '',
+                          isComplete: false,
+                          isSourceComplete: false
+                        };
+                        
+                        return;
+                      }
+                      
                       // Create a message fingerprint
-                      const messageKey = `${sourceText}-${translatedText}`;
+                      const messageKey = `${sourceText}-${filteredTranslation}`;
                       
                       // Use a shared global cache for listen mode messages
                       const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
@@ -573,15 +636,26 @@ export function useOpenAISpeechRecognition({
                       // Mark it as processed to prevent duplicate processing elsewhere
                       processedMessages[messageKey] = true;
                       console.log(`[OpenAI WebRTC] First time processing transcript after speech stopped in listen mode:`, sourceText.substring(0, 30) + "...");
+                      
+                      // Update global state with the filtered translation
+                      window.__openAIRawTranscription.translatedText = filteredTranslation;
+                      
+                      // Call the callback with the final transcript
+                      if (onTranslation) {
+                        onTranslation(sourceText, filteredTranslation);
+                      }
+                      
+                      // Send to server
+                      sendToServer(sourceText, filteredTranslation, roomId);
+                    } else {
+                      // Call the callback with the final transcript
+                      if (onTranslation) {
+                        onTranslation(sourceText, translatedText);
+                      }
+                      
+                      // Send to server
+                      sendToServer(sourceText, translatedText, roomId);
                     }
-                    
-                    // Call the callback with the final transcript
-                    if (onTranslation) {
-                      onTranslation(sourceText, translatedText);
-                    }
-                    
-                    // Send to server
-                    sendToServer(sourceText, translatedText, roomId);
                     
                     // Reset transcript for next utterance
                     window.__openAIRawTranscription = {
@@ -607,13 +681,20 @@ export function useOpenAISpeechRecognition({
                       const sourceText = parts[0];
                       const translatedText = parts[parts.length - 1]; // Get the last part as translation
                       
+                      // Remove any trigger phrases that shouldn't be spoken
+                      const filteredTranslation = translatedText
+                        .replace(/translate them/gi, "")
+                        .replace(/translation:/gi, "")
+                        .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+                        .trim();
+                      
                       // Check if we're in listen mode
                       const isListenPage = window.location.pathname.includes('/listen');
                       
                       // For listen mode, use persistent tracking to completely prevent duplication
                       if (isListenPage) {
                         // Create a message fingerprint
-                        const messageKey = `${sourceText}-${translatedText}`;
+                        const messageKey = `${sourceText}-${filteredTranslation}`;
                         
                         // Use a shared global cache for listen mode messages
                         const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
@@ -647,20 +728,20 @@ export function useOpenAISpeechRecognition({
                       
                       window.__openAIRawTranscription = {
                         sourceText,
-                        translatedText,
+                        translatedText: filteredTranslation,
                         isComplete: true
                       };
 
                       // Update lastOpenAIMessage for compatibility
                       window.__lastOpenAIMessage = {
                         text: sourceText,
-                        translatedText,
+                        translatedText: filteredTranslation,
                         timestamp: new Date().toISOString()
                       };
 
                       console.log("[OpenAI WebRTC] Complete message transcript:", {
                         source: sourceText,
-                        translation: translatedText,
+                        translation: filteredTranslation,
                         fullTranscript: transcript
                       });
                     }
