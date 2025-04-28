@@ -369,6 +369,16 @@ export default function Listen() {
   const handlePlayTranslation = (text: string, lang: LanguageCode, ignoreMainSpeaker: boolean = false) => {
     if (!isInitialized) return;
     
+    // First, always cancel any ongoing speech to ensure smooth playback without conflicts
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    
+    // Set the force play flag to ensure our utterance isn't blocked by any filtering
+    (window as any).__forcePlayNextUtterance = true;
+    // And also force target language only mode for consistency
+    (window as any).__playOnlyTargetLanguage = true;
+    
     // Remove any "translate them" or similar phrases from the text
     const filteredText = text
       .replace(/translate them/gi, "")
