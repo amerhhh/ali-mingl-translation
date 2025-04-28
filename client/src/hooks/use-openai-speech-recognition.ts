@@ -84,10 +84,25 @@ export function useOpenAISpeechRecognition({
   useEffect(() => {
     if (!remoteAudioElement.current) {
       const audioEl = document.createElement('audio');
-      audioEl.autoplay = true;
-      audioEl.volume = 1.0; // Ensure full volume for translations
+      
+      // Check if we're in listen mode where we want to completely disable direct audio
+      const isListenPage = window.location.pathname.includes('/listen');
+      if (isListenPage) {
+        // Completely disable audio output in listen mode
+        // We'll use our own speech synthesis instead
+        audioEl.autoplay = false;
+        audioEl.volume = 0; // Mute the element
+        console.log('Created remote audio element for OpenAI audio (MUTED for listen mode)');
+        // Force target-language-only mode
+        (window as any).__playOnlyTargetLanguage = true;
+      } else {
+        // Normal settings for chat mode
+        audioEl.autoplay = true;
+        audioEl.volume = 1.0; // Full volume for translations
+        console.log('Created remote audio element for OpenAI audio');
+      }
+      
       remoteAudioElement.current = audioEl;
-      console.log('Created remote audio element for OpenAI audio');
     }
 
     return () => {
@@ -362,6 +377,7 @@ export function useOpenAISpeechRecognition({
               // This gives us full control over which voice plays and avoids source language playback
               remoteAudioElement.current.srcObject = null;
               remoteAudioElement.current.autoplay = false;
+              remoteAudioElement.current.volume = 0; // Ensure volume is muted
               // Force global flag to true in Listen mode
               (window as any).__playOnlyTargetLanguage = true;
               console.log('[OpenAI WebRTC] LISTEN MODE - forcing target language only mode');

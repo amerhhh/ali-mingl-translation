@@ -632,6 +632,11 @@ export default function Listen() {
       // Enable auto-playing of messages in Listen mode
       // In Listen mode, always play the target language translation
       if (latestMessage.targetLang === targetLang) {
+        // Before playing any new message, cancel any ongoing speech
+        if (window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+        
         // Use a slight delay to ensure the DOM has updated
         setTimeout(() => {
           // Check if we're using webspeech (if it's not OpenAI)
@@ -650,12 +655,40 @@ export default function Listen() {
             return;
           }
           
-          if (usingWebSpeech) {
+          // Set a flag to force the next utterance to play, regardless of language detection
+          (window as any).__forcePlayNextUtterance = true;
+          console.log("Listen page: Setting force play flag for next utterance");
+          
+          // For OpenAI mode with RTL source languages (like Arabic), we need extra handling
+          // Use the source text property to detect RTL scripts
+          const sourceText = latestMessage.text || ''; // Property is 'text' in Message interface
+          const isRTLSource = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(sourceText);
+          const isOpenAIMessage = latestMessage.isOpenAI === true;
+          
+          if (isRTLSource && isOpenAIMessage) {
+            console.log("Listen page: Detected RTL source language with OpenAI, using special handling");
+            // When source is RTL, ensure we really cancel any playback of source language
+            if (window.speechSynthesis) {
+              window.speechSynthesis.cancel();
+            }
+            // Force our target language playback with a slightly longer delay
+            setTimeout(() => {
+              handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
+              // Reset force flag after another small delay
+              setTimeout(() => {
+                (window as any).__forcePlayNextUtterance = false;
+              }, 100);
+            }, 300);
+          } else if (usingWebSpeech) {
             // For WebSpeech mode, we need to play the audio through the useEffect
             console.log("Listen page: Playing latest WebSpeech message translation");
             handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
+            // Reset force flag after a small delay
+            setTimeout(() => {
+              (window as any).__forcePlayNextUtterance = false;
+            }, 100);
           } else {
-            // For OpenAI mode, we might still need to play it if it wasn't already played
+            // For other OpenAI mode messages
             console.log("Listen page: OpenAI message detected, checking if it needs to be played");
             // Get the timestamp from the message
             const messageTime = new Date(latestMessage.timestamp).getTime();
@@ -666,6 +699,10 @@ export default function Listen() {
             if (currentTime - messageTime > 3000) {
               handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
             }
+            // Reset force flag after a small delay
+            setTimeout(() => {
+              (window as any).__forcePlayNextUtterance = false;
+            }, 100);
           }
         }, 150);
       }
