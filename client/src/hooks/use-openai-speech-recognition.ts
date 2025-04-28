@@ -676,6 +676,19 @@ export function useOpenAISpeechRecognition({
                 break;
                 
               case 'response.output_item.done':
+                // This message indicates the audio output has been generated and will play
+                console.log("[OpenAI WebRTC] Output item done", data.output_index);
+                
+                // For Listen page ONLY, cancel speech synthesis audio to block OpenAI's voice
+                const isListenPage = window.location.pathname.includes('/listen');
+                if (isListenPage) {
+                  // Cancel any playing speech to block the direct audio
+                  if (window.speechSynthesis) {
+                    console.log('[OpenAI WebRTC] Canceling OpenAI speech in Listen mode to force our TTS');
+                    window.speechSynthesis.cancel();
+                  }
+                }
+                
                 // Process the completed assistant item
                 if (data.item && data.item.content && data.item.content.length > 0) {
                   const content = data.item.content[0];

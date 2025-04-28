@@ -425,12 +425,15 @@ export default function Listen() {
     addDebugLog(`Setting up audio interceptor for target lang: ${targetLang}`);
     
     if ('speechSynthesis' in window) {
-      // Cancel any current speech
+      // Cancel any current speech - this ensures we start with a clean slate
       window.speechSynthesis.cancel();
       
-      // Store the original speak function
-      const originalSpeak = window.speechSynthesis.speak;
-      (window.speechSynthesis as any)._originalSpeak = originalSpeak;
+      // Store the original speak function (only if we haven't already)
+      if (!(window.speechSynthesis as any)._originalSpeak) {
+        (window.speechSynthesis as any)._originalSpeak = window.speechSynthesis.speak;
+        addDebugLog("Original speech function stored");
+      }
+      const originalSpeak = (window.speechSynthesis as any)._originalSpeak;
       
       // Create a mapping for multiple language scripts
       const languageScriptPatterns = {
@@ -464,14 +467,22 @@ export default function Listen() {
         return { detectedLang: 'en', confidence: 0.1 };
       };
       
-      // COMPLETELY override the speak function
+      // COMPLETELY override the speak function 
       window.speechSynthesis.speak = function(utterance: SpeechSynthesisUtterance) {
+        // First, always cancel any ongoing speech to prevent overlapping
+        window.speechSynthesis.cancel();
+        
         // Get the language from the utterance
         const uttLang = utterance.lang?.toLowerCase() || '';
         const targetLangCode = targetLang.toLowerCase();
         
         // Check if this is in the Listen page (where we control translation)
         const isListenPage = window.location.pathname.includes('/listen');
+        
+        // Force target language only mode in Listen page
+        if (isListenPage) {
+          (window as any).__playOnlyTargetLanguage = true;
+        }
         
         // Add to debug logs
         addDebugLog(`Speech request - text: "${utterance.text.substring(0, 20)}..." lang: ${uttLang}`);
