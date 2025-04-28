@@ -189,17 +189,24 @@ export default function ChatRoom() {
     const initializeChat = async () => {
       setIsLoading(true);
       try {
-        // Clear messages first to prevent duplicates
-        clearMessages();
+        // Instead of calling clearMessages directly, which can show the toast message,
+        // we'll handle local cleanup manually without the WebSocket notification
+        if (currentRoomId) {
+          console.log('Initializing chat room - resetting local state');
+          // Clear messages in local state
+          localStorage.removeItem(`messages_${currentRoomId}`);
+          // Clear played message IDs tracking
+          playedMessageIds.current.clear();
+          console.log("Cleared played message tracking on Chat mode initialization");
+        }
+        
         // Then load stored messages
         await loadStoredMessages();
+        
         // Force reconnect to ensure we get latest messages
         if (isConnected) {
           reconnect();
         }
-        // Clear played message IDs to ensure a clean slate when switching modes
-        playedMessageIds.current.clear();
-        console.log("Cleared played message tracking on Chat mode initialization");
       } catch (err) {
         console.error('Failed to load messages:', err);
         setError('Failed to load chat history');
