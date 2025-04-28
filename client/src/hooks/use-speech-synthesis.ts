@@ -104,110 +104,162 @@ export function useSpeechSynthesis() {
       const hasArabicScript = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
       
       // Special handling for Arabic text to improve reliability
-      if (hasArabicScript && text.length > 30 && isListenPage) {
-        console.log('Arabic text detected in Listen mode, using enhanced reliability mode');
+      if (hasArabicScript && isListenPage) {
+        console.log('Arabic text detected in Listen mode, using simplified reliable mode');
         
         try {
-          // For longer Arabic text in Listen mode, we'll use a chunking strategy 
-          // to minimize errors by breaking the text into smaller segments
+          // For Arabic text in Listen mode, we'll use a more direct approach
+          // that's less likely to trigger browser errors
           setIsSpeaking(true);
           
           // First cancel any ongoing speech
           window.speechSynthesis.cancel();
           
-          // Split the text on punctuation to create natural breaks
-          // Arabic punctuation includes: '.' (period), '،' (Arabic comma), and other marks
-          const segments = text.split(/([\.،؛\!\?؟])/);
+          // Create a single utterance with carefully tuned parameters
+          const arabicUtterance = new SpeechSynthesisUtterance(text);
           
-          // Recombine segments with their punctuation 
-          const textChunks: string[] = [];
-          for (let i = 0; i < segments.length; i += 2) {
-            let chunk = segments[i];
-            if (i + 1 < segments.length) {
-              chunk += segments[i + 1]; // Add back the punctuation
-            }
-            if (chunk.trim().length > 0) {
-              textChunks.push(chunk.trim());
-            }
+          // Get available voices
+          let voices = window.speechSynthesis.getVoices();
+          
+          // Log available voices for debugging
+          console.log('Available voices for Arabic:', voices.map(v => `${v.name} (${v.lang})`));
+          
+          // Try to find the best voice for Arabic
+          let voice = null;
+          
+          // First try exact match
+          voice = voices.find(v => v.lang === 'ar-SA' || v.lang === 'ar-EG');
+          
+          // Then try any Arabic voice
+          if (!voice) {
+            voice = voices.find(v => v.lang.toLowerCase().includes('ar'));
           }
           
-          // If we didn't get proper chunks (no punctuation), use a fallback approach
-          if (textChunks.length <= 1) {
-            // Fallback: split by approximate length (20-30 chars)
-            // This tries to avoid cutting words in the middle
-            const words = text.split(' ');
-            textChunks.length = 0; // Clear the chunks array
-            let currentChunk = '';
-            
-            for (const word of words) {
-              if (currentChunk.length + word.length > 25) {
-                if (currentChunk.length > 0) {
-                  textChunks.push(currentChunk.trim());
-                  currentChunk = '';
-                }
-              }
-              currentChunk += ' ' + word;
-            }
-            
-            if (currentChunk.trim().length > 0) {
-              textChunks.push(currentChunk.trim());
-            }
+          // Then try Microsoft voices which often handle Arabic well
+          if (!voice) {
+            voice = voices.find(v => 
+              v.name.includes('Microsoft') && 
+              (v.lang === 'ar-SA' || v.lang === 'ar-EG' || v.lang.includes('ar'))
+            );
           }
           
-          console.log(`Split Arabic text into ${textChunks.length} chunks for reliable playback`);
+          // Finally try any Google voice with Arabic
+          if (!voice) {
+            voice = voices.find(v => 
+              v.name.includes('Google') && 
+              (v.lang === 'ar-SA' || v.lang === 'ar-EG' || v.lang.includes('ar'))
+            );
+          }
           
-          // Function to speak chunks sequentially
-          const speakNextChunk = (index: number) => {
-            if (index >= textChunks.length) {
-              // All chunks have been spoken
-              setIsSpeaking(false);
-              return;
+          // As absolute fallback, use any voice but keep Arabic language setting
+          if (!voice && voices.length > 0) {
+            // Look for any default voice in Chrome/Safari that might work
+            for (const defaultName of ['Samantha', 'Daniel', 'Google US English', 'Microsoft David']) {
+              voice = voices.find(v => v.name.includes(defaultName));
+              if (voice) break;
             }
             
-            const chunk = textChunks[index];
-            const chunkUtterance = new SpeechSynthesisUtterance(chunk);
-            
-            // Get available voices
-            let voices = window.speechSynthesis.getVoices();
-            
-            // Try to find a matching voice for Arabic
-            let voice = voices.find(v => v.lang === 'ar-SA');
+            // If still not found, use the first voice
             if (!voice) {
-              voice = voices.find(v => v.lang.toLowerCase().includes('ar'));
+              voice = voices[0];
             }
-            
-            if (voice) {
-              chunkUtterance.voice = voice;
-            }
-            
-            chunkUtterance.lang = 'ar-SA';
-            chunkUtterance.rate = 0.95; // Slightly slower for better reliability
-            
-            // When this chunk ends, play the next one
-            chunkUtterance.onend = () => {
-              speakNextChunk(index + 1);
-            };
-            
-            // If there's an error with this chunk, try to continue with the next one
-            chunkUtterance.onerror = (event) => {
-              console.error(`Error with Arabic chunk ${index}:`, event);
-              // Try to continue with the next chunk after a brief pause
-              setTimeout(() => {
-                speakNextChunk(index + 1);
-              }, 300);
-            };
-            
-            // Play this chunk
-            window.speechSynthesis.speak(chunkUtterance);
+            console.log('Using fallback voice for Arabic:', voice?.name);
+          }
+          
+          if (voice) {
+            arabicUtterance.voice = voice;
+            console.log('Selected voice for Arabic:', voice.name, voice.lang);
+          } else {
+            console.warn('No voice found for Arabic');
+          }
+          
+          // Apply special settings for reliability
+          arabicUtterance.lang = 'ar-SA';  // Saudi Arabic
+          arabicUtterance.rate = 0.9;      // Slightly slower
+          arabicUtterance.pitch = 1.0;     // Normal pitch
+          arabicUtterance.volume = 1.0;    // Full volume
+          
+          // This is important - manage completion events
+          arabicUtterance.onend = () => {
+            console.log('Arabic speech completed successfully');
+            setIsSpeaking(false);
           };
           
-          // Start speaking the first chunk
-          speakNextChunk(0);
+          // Handle errors - show specific error messages for debugging
+          arabicUtterance.onerror = (event) => {
+            console.error('Arabic speech error:', event.error || 'Unknown error');
+            
+            // All browser error handlers need to reset speaking state
+            setIsSpeaking(false);
+
+            // Special handling for text-to-speech in web browsers
+            // Don't show error to user for any of these - they're system errors
+            // and often can't be fixed by the user
+            
+            // For browsers on mobile that don't fully support Arabic TTS
+            // We'll use a fallback mechanism to handle Arabic text
+            
+            // We can try a super basic approach - for very short text only
+            if (text.length < 50) {
+              console.log('Attempting super simple fallback for Arabic...');
+              
+              try {
+                // Cancel any existing speech synthesis 
+                window.speechSynthesis.cancel();
+                
+                // Wait a moment to ensure the speech engine is reset
+                setTimeout(() => {
+                  try {
+                    // Create a completely new utterance
+                    const fallbackUtterance = new SpeechSynthesisUtterance(text);
+                    
+                    // We'll manually set everything from scratch
+                    fallbackUtterance.lang = 'ar'; // Basic Arabic code
+                    fallbackUtterance.rate = 0.8;  // Even slower
+                    fallbackUtterance.pitch = 1.0;
+                    fallbackUtterance.volume = 1.0;
+                    
+                    // Don't use a specific voice
+                    // Some browsers work better with the default voice
+                    
+                    // Simple event handlers that won't trigger additional errors
+                    fallbackUtterance.onend = () => {
+                      console.log('Arabic fallback speech completed successfully');
+                    };
+                    
+                    fallbackUtterance.onerror = () => {
+                      // Just log the error but don't try additional fallbacks
+                      console.log('Ultimate Arabic fallback failed - this browser may not support Arabic TTS');
+                    };
+                    
+                    // Try one last time
+                    window.speechSynthesis.speak(fallbackUtterance);
+                  } catch (e) {
+                    // Just log, don't try to handle further
+                    console.log('Browser rejected Arabic TTS attempt');
+                  }
+                }, 300);
+              } catch (e) {
+                console.error('Final Arabic fallback failed');
+              }
+            }
+          };
           
-          // Return early as we're handling this with our chunking system
+          // On iOS, we need a small delay
+          const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+          if (isiOS) {
+            setTimeout(() => {
+              window.speechSynthesis.speak(arabicUtterance);
+            }, 100);
+          } else {
+            // Speak immediately on other platforms
+            window.speechSynthesis.speak(arabicUtterance);
+          }
+          
+          // Return early as we're handling Arabic specially
           return;
         } catch (error) {
-          console.error('Error in Arabic chunked speech, falling back to normal synthesis:', error);
+          console.error('Error in Arabic speech, falling back to normal synthesis:', error);
           // We'll continue with the normal approach below
         }
       }
