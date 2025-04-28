@@ -934,7 +934,7 @@ export function useOpenAISpeechRecognition({
                   // Check if we're in target-language-only mode and in listen page, 
                   // we need to manually trigger the text-to-speech for the translation
                   const playOnlyTargetLanguage = (window as any).__playOnlyTargetLanguage;
-                  if (playOnlyTargetLanguage && isListenPage) {
+                  if (isListenPage) {
                     // Try to find a reasonable language code based on the pathname
                     const pathParts = window.location.pathname.split('/');
                     const listenIndex = pathParts.indexOf('listen');
@@ -964,12 +964,67 @@ export function useOpenAISpeechRecognition({
                       'ko': 'ko-KR'
                     };
                     
+                    // We only want to play the translated text in Listen mode
+                    // Extract the translated text part only
+                    let textToSpeak = "";
+                    
+                    // Look for Arabic text in the translation
+                    const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+                    
+                    // Check if the transcript has both source and target texts (usually with a newline between them)
+                    if (translatedText.includes('\n')) {
+                      // Split by newline to separate source and target texts
+                      const parts = translatedText.split('\n').filter(p => p.trim());
+                      
+                      if (parts.length >= 2) {
+                        // First part is source text, second part is translated text
+                        // For listen mode, we always want the translated text (second part)
+                        textToSpeak = parts[parts.length - 1]; // Use the last part
+                        console.log(`[OpenAI WebRTC] Using split text parts. Selected: "${textToSpeak.substring(0, 30)}..."`);
+                      } else {
+                        textToSpeak = translatedText;
+                      }
+                    }
+                    // If target language is Arabic, find and use Arabic text
+                    else if (targetLang === 'ar' && arabicRegex.test(translatedText)) {
+                      // Extract Arabic part from translatedText (remove quotes if present)
+                      const arabicMatch = translatedText.match(/["']?([\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\s\.\,\;\:\-\!\?]+)["']?/);
+                      if (arabicMatch && arabicMatch[1]) {
+                        textToSpeak = arabicMatch[1];
+                        console.log(`[OpenAI WebRTC] Extracted Arabic text: "${textToSpeak.substring(0, 30)}..."`);
+                      } else {
+                        textToSpeak = translatedText;
+                      }
+                    } 
+                    // If target is English or another language with Latin script
+                    else if (['en', 'es', 'fr', 'de', 'it', 'pt'].includes(targetLang)) {
+                      // Remove parts that look like non-Latin scripts
+                      const nonLatinPattern = /["']?[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\u0E00-\u0E7F\s\.\,\;\:\-\!\?]+["']?/;
+                      
+                      // Check if we have quotes around the target text
+                      const quotesMatch = translatedText.match(/["'](.*?)["']/);
+                      if (quotesMatch && quotesMatch[1]) {
+                        // Use content inside quotes
+                        textToSpeak = quotesMatch[1];
+                        console.log(`[OpenAI WebRTC] Extracted quoted text: "${textToSpeak.substring(0, 30)}..."`);
+                      } else {
+                        // Split by non-Latin pattern
+                        const parts = translatedText.split(nonLatinPattern).filter(p => p.trim());
+                        textToSpeak = parts[0] || translatedText;
+                        console.log(`[OpenAI WebRTC] Extracted ${targetLang} text: "${textToSpeak.substring(0, 30)}..."`);
+                      }
+                    }
+                    // Otherwise, use the whole translation
+                    else {
+                      textToSpeak = translatedText;
+                    }
+                    
                     const langCode = langMap[targetLang] || targetLang;
                     
-                    console.log(`[OpenAI WebRTC] Manually playing translated text with speech synthesis: "${translatedText.substring(0, 30)}..." (lang: ${langCode})`);
+                    console.log(`[OpenAI WebRTC] Manually playing translated text with speech synthesis: "${textToSpeak.substring(0, 30)}..." (lang: ${langCode})`);
                     
                     // Create and configure the utterance
-                    const utterance = new SpeechSynthesisUtterance(translatedText);
+                    const utterance = new SpeechSynthesisUtterance(textToSpeak);
                     utterance.lang = langCode;
                     utterance.volume = 1.0;
                     
@@ -982,7 +1037,7 @@ export function useOpenAISpeechRecognition({
                     // Reset flag
                     setTimeout(() => {
                       (window as any).__forcePlayNextUtterance = false;
-                    }, 100);
+                    }, 500);
                   }
                   
                   // Also send to the server, but don't reset isComplete flag yet

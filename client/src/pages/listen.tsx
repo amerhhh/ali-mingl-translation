@@ -480,7 +480,10 @@ export default function Listen() {
         const { detectedLang, confidence } = getLanguageForScript(utterance.text);
         
         if (detectedLang && confidence > 0.2) {
-          addDebugLog(`Script detection: likely ${languageScriptPatterns[detectedLang]?.name || detectedLang} script (confidence: ${(confidence * 100).toFixed(1)}%)`);
+          const scriptInfo = detectedLang in languageScriptPatterns 
+            ? languageScriptPatterns[detectedLang as keyof typeof languageScriptPatterns]
+            : { name: detectedLang };
+          addDebugLog(`Script detection: likely ${scriptInfo.name} script (confidence: ${(confidence * 100).toFixed(1)}%)`);
         }
         
         // Enable target-language-only mode by default
@@ -508,17 +511,36 @@ export default function Listen() {
         
         // In Listen page, we want to be extra careful to prevent duplicates
         if (isListenPage && playOnlyTargetLanguage) {
-          // Check if this is the first utterance we've received in a short window
-          const lastUtteranceTime = (window as any).__lastUtteranceTime || 0;
-          const isFirstInSequence = now - lastUtteranceTime > 1500; // More than 1.5 seconds
-          (window as any).__lastUtteranceTime = now;
-          
-          // If this is OpenAI mode and it's the first utterance in a sequence, it's likely the source language
-          // that we want to block
-          if (isFirstInSequence && (window as any).__openAIConnectionReady === true) {
-            addDebugLog(`🔇 Blocking first utterance in sequence (likely source language)`);
-            return; // Block this utterance
+          // If this is a forced play utterance, we should never block it
+          if ((window as any).__forcePlayNextUtterance === true) {
+            addDebugLog(`🔊 Force playing this utterance (unblocked by force flag)`);
+          } 
+          // Otherwise, we need to be careful about blocking only source language
+          else {
+            // Check if this utterance's text matches the target language script
+            const textMatchesTargetScript = detectedLang === targetLangCode;
+            
+            // Check if we're in OpenAI mode (more aggressive filtering needed)
+            const isOpenAIMode = (window as any).__openAIConnectionReady === true;
+            
+            // Don't block if the text matches target language script (even if it's the first utterance)
+            if (!textMatchesTargetScript && isOpenAIMode) {
+              // Check if this is the first utterance we've received in a short window
+              const lastUtteranceTime = (window as any).__lastUtteranceTime || 0;
+              const isFirstInSequence = now - lastUtteranceTime > 1500; // More than 1.5 seconds
+              
+              // If it's the first utterance and doesn't match target script, it's likely source language
+              if (isFirstInSequence) {
+                addDebugLog(`🔇 Blocking first utterance in sequence (likely source language)`);
+                // Update the timestamp but block the speech
+                (window as any).__lastUtteranceTime = now;
+                return; // Block this utterance
+              }
+            }
           }
+          
+          // Always update the timestamp for any utterance that makes it past filtering
+          (window as any).__lastUtteranceTime = now;
         }
         
         // Decide if we should play this utterance
