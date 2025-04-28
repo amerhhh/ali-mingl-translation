@@ -660,9 +660,11 @@ export default function Listen() {
           console.log("Listen page: Setting force play flag for next utterance");
           
           // For OpenAI mode with RTL source languages (like Arabic), we need extra handling
-          // Use the source text property to detect RTL scripts
-          const sourceText = latestMessage.text || ''; // Property is 'text' in Message interface
-          const isRTLSource = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(sourceText);
+          // Check if this is an Arabic or other RTL message based on the translatedText
+          // This works in either direction as we'll check both fields
+          const isRTLSource = 
+            /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(filteredText) || 
+            /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(latestMessage.text || '');
           const isOpenAIMessage = latestMessage.isOpenAI === true;
           
           if (isRTLSource && isOpenAIMessage) {
