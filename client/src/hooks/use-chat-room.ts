@@ -47,18 +47,29 @@ const getRandomEmoji = (): UserEmoji => {
 };
 
 // Helper function to deduplicate messages by content and timestamp
+// Improved deduplication that prioritizes server-side order but removes exact duplicates
 const deduplicateMessages = (messages: Message[]): Message[] => {
   const unique = new Map<string, Message>();
+  const seen = new Set<string>();
+  const result: Message[] = [];
   
-  messages.forEach(msg => {
-    // Create a unique key based on content and timestamp
-    const key = `${msg.text}|${msg.translatedText}|${msg.timestamp}|${msg.temp_user_uuid}`;
-    if (!unique.has(key)) {
-      unique.set(key, msg);
+  // First pass: create message keys and detect duplicates
+  for (const msg of messages) {
+    // Create a complete unique key with more fields to ensure proper deduplication
+    const key = `${msg.text}|${msg.translatedText}|${msg.timestamp}|${msg.temp_user_uuid}|${msg.sourceLang}|${msg.targetLang}`;
+    
+    // If we've already seen this exact message, skip it
+    if (seen.has(key)) {
+      console.log('Skipping duplicate message:', msg.text.substring(0, 20) + '...');
+      continue;
     }
-  });
+    
+    // Mark as seen and add to results
+    seen.add(key);
+    result.push(msg);
+  }
   
-  return Array.from(unique.values());
+  return result;
 };
 
 export function useChatRoom(roomId: string): ChatRoom {
@@ -272,19 +283,37 @@ export function useChatRoom(roomId: string): ChatRoom {
                 translatedText: newMessage.translatedText.substring(0, 30) + '...'
               });
               setMessages(prev => {
-                // Enhanced duplicate detection that checks all message properties
-                const isDuplicate = prev.some(
-                  msg => 
-                    msg.text === newMessage.text && 
-                    msg.translatedText === newMessage.translatedText &&
-                    msg.temp_user_uuid === newMessage.temp_user_uuid &&
-                    msg.targetLang === newMessage.targetLang &&
-                    // Exact timestamp comparison
-                    msg.timestamp === newMessage.timestamp
+                // Create a more robust composite key for duplicate detection
+                const messageKey = `${newMessage.text}|${newMessage.translatedText}|${newMessage.timestamp}|${newMessage.temp_user_uuid}|${newMessage.sourceLang}|${newMessage.targetLang}`;
+                
+                // Create keys for all existing messages for comparison
+                const existingMessageKeys = prev.map(msg => 
+                  `${msg.text}|${msg.translatedText}|${msg.timestamp}|${msg.temp_user_uuid}|${msg.sourceLang}|${msg.targetLang}`
                 );
+                
+                // Check if this exact message already exists
+                const isDuplicate = existingMessageKeys.includes(messageKey);
                 
                 if (isDuplicate) {
                   console.log('Duplicate message detected, not adding again:', {
+                    text: newMessage.text.substring(0, 20),
+                    timestamp: newMessage.timestamp
+                  });
+                  return prev;
+                }
+                
+                // Check if this message was sent very recently with same content (within 2 seconds)
+                const now = Date.now();
+                const messageTime = new Date(newMessage.timestamp).getTime();
+                const recentMessages = prev.filter(msg => 
+                  msg.text === newMessage.text &&
+                  msg.translatedText === newMessage.translatedText &&
+                  msg.temp_user_uuid === newMessage.temp_user_uuid &&
+                  Math.abs(new Date(msg.timestamp).getTime() - messageTime) < 2000
+                );
+                
+                if (recentMessages.length > 0) {
+                  console.log('Very similar message detected within 2 seconds, treating as duplicate:', {
                     text: newMessage.text.substring(0, 20),
                     timestamp: newMessage.timestamp
                   });
@@ -312,19 +341,37 @@ export function useChatRoom(roomId: string): ChatRoom {
               };
               console.log('Adding new OpenAI transcription to chat:', openAIMessage);
               setMessages(prev => {
-                // Enhanced duplicate detection that checks all message properties
-                const isDuplicate = prev.some(
-                  msg => 
-                    msg.text === openAIMessage.text && 
-                    msg.translatedText === openAIMessage.translatedText &&
-                    msg.temp_user_uuid === openAIMessage.temp_user_uuid &&
-                    msg.targetLang === openAIMessage.targetLang &&
-                    // Exact timestamp comparison
-                    msg.timestamp === openAIMessage.timestamp
+                // Create a more robust composite key for duplicate detection
+                const messageKey = `${openAIMessage.text}|${openAIMessage.translatedText}|${openAIMessage.timestamp}|${openAIMessage.temp_user_uuid}|${openAIMessage.sourceLang}|${openAIMessage.targetLang}`;
+                
+                // Create keys for all existing messages for comparison
+                const existingMessageKeys = prev.map(msg => 
+                  `${msg.text}|${msg.translatedText}|${msg.timestamp}|${msg.temp_user_uuid}|${msg.sourceLang}|${msg.targetLang}`
                 );
+                
+                // Check if this exact message already exists
+                const isDuplicate = existingMessageKeys.includes(messageKey);
                 
                 if (isDuplicate) {
                   console.log('Duplicate OpenAI transcription detected, not adding again:', {
+                    text: openAIMessage.text.substring(0, 20),
+                    timestamp: openAIMessage.timestamp
+                  });
+                  return prev;
+                }
+                
+                // Check if this message was sent very recently with same content (within 2 seconds)
+                const now = Date.now();
+                const messageTime = new Date(openAIMessage.timestamp).getTime();
+                const recentMessages = prev.filter(msg => 
+                  msg.text === openAIMessage.text &&
+                  msg.translatedText === openAIMessage.translatedText &&
+                  msg.temp_user_uuid === openAIMessage.temp_user_uuid &&
+                  Math.abs(new Date(msg.timestamp).getTime() - messageTime) < 2000
+                );
+                
+                if (recentMessages.length > 0) {
+                  console.log('Very similar OpenAI message detected within 2 seconds, treating as duplicate:', {
                     text: openAIMessage.text.substring(0, 20),
                     timestamp: openAIMessage.timestamp
                   });
@@ -491,12 +538,17 @@ export function useChatRoom(roomId: string): ChatRoom {
       console.log('Sent clear_room message to server');
     } else {
       console.warn('WebSocket not connected, could not send clear_room message');
-      // Show a warning to the user that other devices might not see the changes immediately
-      toast({
-        variant: "destructive",
-        title: "Connection Issue",
-        description: "Messages cleared locally, but other devices might not be updated until reconnected."
-      });
+      // Only show the warning if we're not on the home page
+      // This avoids the warning when we're navigating away from the chat
+      const isHomePage = window.location.pathname === '/' || window.location.pathname === '/home';
+      if (!isHomePage) {
+        // Show a warning to the user that other devices might not see the changes immediately
+        toast({
+          variant: "destructive",
+          title: "Connection Issue",
+          description: "Messages cleared locally, but other devices might not be updated until reconnected."
+        });
+      }
     }
   }, [socket, roomId, toast]);
 

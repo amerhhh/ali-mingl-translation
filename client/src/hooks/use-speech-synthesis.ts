@@ -113,32 +113,58 @@ export function useSpeechSynthesis() {
         };
       }
 
+      // Check if the text contains Arabic characters
+      const containsArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+      
       // Convert language code to match voice format
-      const langCode = lang.toLowerCase().startsWith('ar') ? 'ar-SA' : lang;
-
-      // Try to find a matching voice
-      let voice = voices.find(v => v.lang.toLowerCase().startsWith(langCode.toLowerCase()));
+      // Force ar-SA for any text with Arabic characters, regardless of the specified language
+      let langCode = lang;
+      if (containsArabic || lang.toLowerCase().startsWith('ar')) {
+        langCode = 'ar-SA';
+        console.log('Arabic text detected, using ar-SA language code');
+      }
 
       // Log available voices for debugging
       console.log('Available voices:', voices.map(v => `${v.name} (${v.lang})`));
-      console.log('Selected voice:', voice?.name);
+      
+      // Try specialized voice selection for Arabic text
+      let voice = null;
+      
+      if (containsArabic || langCode === 'ar-SA') {
+        // First, try to find an exact ar-SA voice
+        voice = voices.find(v => v.lang === 'ar-SA');
+        
+        // If not found, try any Arabic voice
+        if (!voice) {
+          voice = voices.find(v => v.lang.toLowerCase().includes('ar'));
+        }
+        
+        // If still not found, try Microsoft voices which often handle Arabic well
+        if (!voice) {
+          voice = voices.find(v => v.name.includes('Microsoft') && (v.lang === 'ar-SA' || v.lang.includes('ar')));
+        }
+        
+        // Last resort - use any available voice but maintain Arabic language setting
+        if (!voice && voices.length > 0) {
+          voice = voices[0]; // Use first available voice but keep language as Arabic
+          console.log('No Arabic voice found, using default voice but keeping Arabic language settings');
+        }
+      } else {
+        // For non-Arabic text, find voice matching the language
+        voice = voices.find(v => v.lang.toLowerCase().startsWith(langCode.toLowerCase()));
+      }
+
+      console.log('Selected voice:', voice?.name, 'for language:', langCode);
 
       if (voice) {
         utterance.voice = voice;
       } else {
         console.warn(`No voice found for language ${langCode}, using default`);
-        // For Arabic, try to find any Arabic voice as fallback
+        // For Arabic, give a more specific message
         if (langCode === 'ar-SA') {
-          voice = voices.find(v => v.lang.toLowerCase().includes('ar'));
-          if (voice) {
-            utterance.voice = voice;
-            console.log('Using fallback Arabic voice:', voice.name);
-          } else {
-            toast({
-              title: "Voice Not Available",
-              description: "Arabic voice not found on your device. Using default voice instead.",
-            });
-          }
+          console.warn('No Arabic voice found on this device');
+          // Don't show toast to avoid disrupting user experience
+          // Instead, we'll proceed with default voice
         }
       }
 
