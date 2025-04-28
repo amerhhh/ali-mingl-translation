@@ -432,22 +432,55 @@ export default function Listen() {
       const originalSpeak = window.speechSynthesis.speak;
       (window.speechSynthesis as any)._originalSpeak = originalSpeak;
       
+      // Create a mapping for multiple language scripts
+      const languageScriptPatterns = {
+        'ar': { regex: /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/, name: 'Arabic' },
+        'zh': { regex: /[\u4E00-\u9FFF\u3400-\u4DBF\u20000-\u2A6DF\u2A700-\u2B73F\u2B740-\u2B81F\u2B820-\u2CEAF]/, name: 'Chinese' },
+        'ja': { regex: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]/, name: 'Japanese' },
+        'ko': { regex: /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F\uA960-\uA97F\uD7B0-\uD7FF]/, name: 'Korean' },
+        'ru': { regex: /[\u0400-\u04FF\u0500-\u052F]/, name: 'Cyrillic' },
+        'he': { regex: /[\u0590-\u05FF]/, name: 'Hebrew' },
+        'th': { regex: /[\u0E00-\u0E7F]/, name: 'Thai' },
+        'hi': { regex: /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF]/, name: 'Indic' },
+        // Default script for Latin-based languages
+        'latin': { regex: /[A-Za-z\u00C0-\u00FF\u0100-\u017F\u0180-\u024F]/, name: 'Latin' }
+      };
+      
+      // Get the appropriate language code for a detected script
+      const getLanguageForScript = (text: string): { detectedLang: string, confidence: number } => {
+        // Check for each script
+        for (const [lang, pattern] of Object.entries(languageScriptPatterns)) {
+          const matches = (text.match(pattern.regex) || []).length;
+          if (matches > 0) {
+            // Calculate confidence based on percentage of matching characters
+            const confidence = matches / Math.max(1, text.length);
+            if (confidence > 0.2) { // At least 20% of characters match the script
+              return { detectedLang: lang, confidence };
+            }
+          }
+        }
+        
+        // Default to Latin script
+        return { detectedLang: 'en', confidence: 0.1 };
+      };
+      
       // COMPLETELY override the speak function
       window.speechSynthesis.speak = function(utterance: SpeechSynthesisUtterance) {
         // Get the language from the utterance
         const uttLang = utterance.lang?.toLowerCase() || '';
         const targetLangCode = targetLang.toLowerCase();
         
+        // Check if this is in the Listen page (where we control translation)
+        const isListenPage = window.location.pathname.includes('/listen');
+        
         // Add to debug logs
         addDebugLog(`Speech request - text: "${utterance.text.substring(0, 20)}..." lang: ${uttLang}`);
         
-        // Get text direction to help identify language - arabic text will have RTL characters
-        const hasRtlChars = /[\u0591-\u07FF\u200F\u202B\u202E\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(utterance.text);
-        const looksPossiblyArabic = /[\u0600-\u06FF]/.test(utterance.text);
+        // Detect script in the text
+        const { detectedLang, confidence } = getLanguageForScript(utterance.text);
         
-        // Log detailed information to help with debugging
-        if (hasRtlChars || looksPossiblyArabic) {
-          addDebugLog(`Text contains RTL characters: ${hasRtlChars}, Arabic script: ${looksPossiblyArabic}`);
+        if (detectedLang && confidence > 0.2) {
+          addDebugLog(`Script detection: likely ${languageScriptPatterns[detectedLang]?.name || detectedLang} script (confidence: ${(confidence * 100).toFixed(1)}%)`);
         }
         
         // Enable target-language-only mode by default
@@ -456,28 +489,63 @@ export default function Listen() {
           addDebugLog(`Setting default __playOnlyTargetLanguage = true`);
         }
         
-        // In OpenAI target-language-only mode, we want to play the translated text 
-        // regardless of the language code provided
-        const isTargetLanguageArabic = targetLangCode === 'ar';
+        // Get the play target language preference
+        const playOnlyTargetLanguage = (window as any).__playOnlyTargetLanguage === true;
         
-        if (
+        // For debugging - check if this might be a duplicate utterance
+        const utteranceKey = `${uttLang}-${utterance.text.substring(0, 30)}`;
+        const now = Date.now();
+        const lastPlayedMap = (window as any).__lastPlayedUtterances = (window as any).__lastPlayedUtterances || {};
+        const lastPlayed = lastPlayedMap[utteranceKey] || 0;
+        
+        if (now - lastPlayed < 1000) {
+          // This is a duplicate utterance within 1 second, likely the source language repetition
+          addDebugLog(`⚠️ Detected duplicate utterance within 1 second, possibly source language repetition`);
+        }
+        
+        // Always update the last played time
+        lastPlayedMap[utteranceKey] = now;
+        
+        // In Listen page, we want to be extra careful to prevent duplicates
+        if (isListenPage && playOnlyTargetLanguage) {
+          // Check if this is the first utterance we've received in a short window
+          const lastUtteranceTime = (window as any).__lastUtteranceTime || 0;
+          const isFirstInSequence = now - lastUtteranceTime > 1500; // More than 1.5 seconds
+          (window as any).__lastUtteranceTime = now;
+          
+          // If this is OpenAI mode and it's the first utterance in a sequence, it's likely the source language
+          // that we want to block
+          if (isFirstInSequence && (window as any).__openAIConnectionReady === true) {
+            addDebugLog(`🔇 Blocking first utterance in sequence (likely source language)`);
+            return; // Block this utterance
+          }
+        }
+        
+        // Decide if we should play this utterance
+        const shouldPlay = 
           // Check for our force play flag first
           (window as any).__forcePlayNextUtterance === true ||
           // Allow text that actually has the right language code
           uttLang.includes(targetLangCode) || 
-          // SPECIAL FIX FOR ARABIC: Accept Arabic text even if language code is wrong
-          (isTargetLanguageArabic && (hasRtlChars || looksPossiblyArabic)) ||
-          // FIX FOR OPENAI: Force play any speech coming from our OpenAI speech recognizer
-          (window as any).__playOnlyTargetLanguage === true
-        ) {
-          // Force the correct language for the utterance
+          // Allow when script detection matches target language
+          (detectedLang === targetLangCode) ||
+          // If we're not in Listen page, or target-only mode is off, allow anything
+          (!isListenPage || !playOnlyTargetLanguage);
+        
+        if (shouldPlay) {
+          // Force the correct language for the utterance based on script detection
           const originalLang = utterance.lang;
           
-          if (isTargetLanguageArabic && looksPossiblyArabic) {
-            utterance.lang = 'ar-SA';
-            addDebugLog(`Fixed Arabic language code: ${originalLang} → ar-SA`);
+          // Try to set the most appropriate language code
+          if (detectedLang && detectedLang !== 'latin' && confidence > 0.3) {
+            // If we detected a specific script with high confidence, use it
+            const newLangCode = getLanguageCode(detectedLang as LanguageCode) || utterance.lang;
+            if (newLangCode !== originalLang) {
+              utterance.lang = newLangCode;
+              addDebugLog(`Fixed language code based on script detection: ${originalLang} → ${newLangCode}`);
+            }
           } else if (targetLangCode && !uttLang.includes(targetLangCode)) {
-            // For other languages, try to use the target language code
+            // Otherwise use the target language
             const newLangCode = getLanguageCode(targetLang);
             utterance.lang = newLangCode;
             addDebugLog(`Fixed language code: ${originalLang} → ${newLangCode}`);
