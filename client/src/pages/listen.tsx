@@ -236,10 +236,18 @@ export default function Listen() {
     const initializeChat = async () => {
       setIsLoading(true);
       try {
-        // Clear messages first to prevent duplicates
-        clearMessages();
+        // Instead of calling clearMessages directly, which can show the toast message,
+        // we'll handle local cleanup manually without the WebSocket notification
+        if (currentRoomId) {
+          console.log('Initializing listen room - resetting local state');
+          // Clear messages in local state
+          localStorage.removeItem(`messages_${currentRoomId}`);
+          // No need to update server here as we'll get the latest state during connection
+        }
+        
         // Then load stored messages
         await loadStoredMessages();
+        
         // Force reconnect to ensure we get latest messages
         if (isConnected) {
           reconnect();

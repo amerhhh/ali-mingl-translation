@@ -538,10 +538,21 @@ export function useChatRoom(roomId: string): ChatRoom {
       console.log('Sent clear_room message to server');
     } else {
       console.warn('WebSocket not connected, could not send clear_room message');
-      // Only show the warning if we're not on the home page
-      // This avoids the warning when we're navigating away from the chat
+      
+      // Determine if this is a fresh room creation or navigation scenario
+      // Skip warning in these common scenarios where disconnection is expected
       const isHomePage = window.location.pathname === '/' || window.location.pathname === '/home';
-      if (!isHomePage) {
+      const isInitialPageLoad = document.readyState !== 'complete' || 
+                               (performance.now() < 5000); // Within first 5 seconds of page load
+      const isCreatingRoom = window.location.pathname.endsWith('/chat') || 
+                            window.location.pathname.endsWith('/listen');
+      
+      // Only show the warning in specific cases:
+      // 1. Not on home page
+      // 2. Not during initial page load
+      // 3. Not when creating a new room
+      // 4. Not when URL includes empty path segments (common during navigation)
+      if (!isHomePage && !isInitialPageLoad && !isCreatingRoom && !window.location.pathname.includes('//')) {
         // Show a warning to the user that other devices might not see the changes immediately
         toast({
           variant: "destructive",
