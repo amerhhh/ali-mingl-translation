@@ -685,7 +685,8 @@ export function SpeechInput({
             if (usingOpenAI) {
               console.log(`Starting OpenAI speech recognition (attempt ${retryCount + 1}/${maxRetries})`);
               // For OpenAI, use the await since it returns a Promise<boolean>
-              success = await startListeningOpenAI();
+              const result = await startListeningOpenAI();
+              success = result === true; // Ensure we get a boolean
               
               // Check if we're in listen mode
               const isListenPage = window.location.pathname.includes('/listen');
