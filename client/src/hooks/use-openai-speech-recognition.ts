@@ -368,8 +368,11 @@ export function useOpenAISpeechRecognition({
               console.log('[OpenAI WebRTC] Set audio source for remote audio element (FULL AUDIO mode)');
             } else if (isListenPage && playOnlyTargetLanguage) {
               // In Listen page and user wants target language only
-              // We don't set srcObject here - translations will be played via speech synthesis
-              console.log('[OpenAI WebRTC] TARGET LANGUAGE ONLY mode - not setting audio source');
+              // We need to set the audio source to null to ensure we don't play anything
+              // But we still need to process the transcript for text-to-speech
+              remoteAudioElement.current.srcObject = null;
+              remoteAudioElement.current.autoplay = false;
+              console.log('[OpenAI WebRTC] TARGET LANGUAGE ONLY mode - disabled direct audio playback');
             } else if (!isChatPage) {
               // Not in Listen or Chat page - normal behavior
               remoteAudioElement.current.srcObject = e.streams[0];
@@ -754,6 +757,54 @@ export function useOpenAISpeechRecognition({
                         translation: filteredTranslation,
                         fullTranscript: transcript
                       });
+                      
+                      // Check if we're in target-language-only mode
+                      const playOnlyTargetLanguage = (window as any).__playOnlyTargetLanguage;
+                      
+                      // If we're in target-language-only mode and in listen page, 
+                      // we need to manually trigger the text-to-speech for the translation
+                      if (playOnlyTargetLanguage && isListenPage) {
+                        // Try to find a reasonable language code based on the pathname
+                        const pathParts = window.location.pathname.split('/');
+                        const listenIndex = pathParts.indexOf('listen');
+                        let targetLang = 'en'; // Default to English
+                        
+                        // Try to extract target language from path
+                        if (listenIndex >= 0 && listenIndex + 2 < pathParts.length) {
+                          // The URL format should be /listen/ROOMID/TARGETLANG
+                          const possibleLang = pathParts[listenIndex + 2];
+                          if (possibleLang && possibleLang.length === 2) {
+                            targetLang = possibleLang;
+                          }
+                        }
+                        
+                        // Add voice mapping for common languages
+                        const langMap: Record<string, string> = {
+                          'en': 'en-US',
+                          'es': 'es-ES',
+                          'fr': 'fr-FR',
+                          'de': 'de-DE',
+                          'it': 'it-IT',
+                          'pt': 'pt-PT',
+                          'ar': 'ar-SA',
+                          'ru': 'ru-RU',
+                          'zh': 'zh-CN',
+                          'ja': 'ja-JP',
+                          'ko': 'ko-KR'
+                        };
+                        
+                        const langCode = langMap[targetLang] || targetLang;
+                        
+                        console.log(`[OpenAI WebRTC] Manually playing translated text with speech synthesis: "${filteredTranslation.substring(0, 30)}..." (lang: ${langCode})`);
+                        
+                        // Create and configure the utterance
+                        const utterance = new SpeechSynthesisUtterance(filteredTranslation);
+                        utterance.lang = langCode;
+                        utterance.volume = 1.0;
+                        
+                        // Play the translation using speech synthesis
+                        window.speechSynthesis.speak(utterance);
+                      }
                     }
                   }
                 }
@@ -871,6 +922,52 @@ export function useOpenAISpeechRecognition({
                     translatedText: translatedText.substring(0, 30) + "..."
                   });
                   onTranslation(sourceText, translatedText);
+                  
+                  // Check if we're in target-language-only mode and in listen page, 
+                  // we need to manually trigger the text-to-speech for the translation
+                  const playOnlyTargetLanguage = (window as any).__playOnlyTargetLanguage;
+                  if (playOnlyTargetLanguage && isListenPage) {
+                    // Try to find a reasonable language code based on the pathname
+                    const pathParts = window.location.pathname.split('/');
+                    const listenIndex = pathParts.indexOf('listen');
+                    let targetLang = 'en'; // Default to English
+                    
+                    // Try to extract target language from path
+                    if (listenIndex >= 0 && listenIndex + 2 < pathParts.length) {
+                      // The URL format should be /listen/ROOMID/TARGETLANG
+                      const possibleLang = pathParts[listenIndex + 2];
+                      if (possibleLang && possibleLang.length === 2) {
+                        targetLang = possibleLang;
+                      }
+                    }
+                    
+                    // Add voice mapping for common languages
+                    const langMap: Record<string, string> = {
+                      'en': 'en-US',
+                      'es': 'es-ES',
+                      'fr': 'fr-FR',
+                      'de': 'de-DE',
+                      'it': 'it-IT',
+                      'pt': 'pt-PT',
+                      'ar': 'ar-SA',
+                      'ru': 'ru-RU',
+                      'zh': 'zh-CN',
+                      'ja': 'ja-JP',
+                      'ko': 'ko-KR'
+                    };
+                    
+                    const langCode = langMap[targetLang] || targetLang;
+                    
+                    console.log(`[OpenAI WebRTC] Manually playing translated text with speech synthesis: "${translatedText.substring(0, 30)}..." (lang: ${langCode})`);
+                    
+                    // Create and configure the utterance
+                    const utterance = new SpeechSynthesisUtterance(translatedText);
+                    utterance.lang = langCode;
+                    utterance.volume = 1.0;
+                    
+                    // Play the translation using speech synthesis
+                    window.speechSynthesis.speak(utterance);
+                  }
                   
                   // Also send to the server, but don't reset isComplete flag yet
                   // to allow the message to be displayed in the UI first
