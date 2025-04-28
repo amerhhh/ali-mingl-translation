@@ -99,6 +99,118 @@ export function useSpeechSynthesis() {
         window.speechSynthesis.cancel();
         currentUtterance.current = null;
       }
+      
+      // Check if this is Arabic text 
+      const hasArabicScript = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+      
+      // Special handling for Arabic text to improve reliability
+      if (hasArabicScript && text.length > 30 && isListenPage) {
+        console.log('Arabic text detected in Listen mode, using enhanced reliability mode');
+        
+        try {
+          // For longer Arabic text in Listen mode, we'll use a chunking strategy 
+          // to minimize errors by breaking the text into smaller segments
+          setIsSpeaking(true);
+          
+          // First cancel any ongoing speech
+          window.speechSynthesis.cancel();
+          
+          // Split the text on punctuation to create natural breaks
+          // Arabic punctuation includes: '.' (period), '،' (Arabic comma), and other marks
+          const segments = text.split(/([\.،؛\!\?؟])/);
+          
+          // Recombine segments with their punctuation 
+          const textChunks: string[] = [];
+          for (let i = 0; i < segments.length; i += 2) {
+            let chunk = segments[i];
+            if (i + 1 < segments.length) {
+              chunk += segments[i + 1]; // Add back the punctuation
+            }
+            if (chunk.trim().length > 0) {
+              textChunks.push(chunk.trim());
+            }
+          }
+          
+          // If we didn't get proper chunks (no punctuation), use a fallback approach
+          if (textChunks.length <= 1) {
+            // Fallback: split by approximate length (20-30 chars)
+            // This tries to avoid cutting words in the middle
+            const words = text.split(' ');
+            textChunks.length = 0; // Clear the chunks array
+            let currentChunk = '';
+            
+            for (const word of words) {
+              if (currentChunk.length + word.length > 25) {
+                if (currentChunk.length > 0) {
+                  textChunks.push(currentChunk.trim());
+                  currentChunk = '';
+                }
+              }
+              currentChunk += ' ' + word;
+            }
+            
+            if (currentChunk.trim().length > 0) {
+              textChunks.push(currentChunk.trim());
+            }
+          }
+          
+          console.log(`Split Arabic text into ${textChunks.length} chunks for reliable playback`);
+          
+          // Function to speak chunks sequentially
+          const speakNextChunk = (index: number) => {
+            if (index >= textChunks.length) {
+              // All chunks have been spoken
+              setIsSpeaking(false);
+              return;
+            }
+            
+            const chunk = textChunks[index];
+            const chunkUtterance = new SpeechSynthesisUtterance(chunk);
+            
+            // Get available voices
+            let voices = window.speechSynthesis.getVoices();
+            
+            // Try to find a matching voice for Arabic
+            let voice = voices.find(v => v.lang === 'ar-SA');
+            if (!voice) {
+              voice = voices.find(v => v.lang.toLowerCase().includes('ar'));
+            }
+            
+            if (voice) {
+              chunkUtterance.voice = voice;
+            }
+            
+            chunkUtterance.lang = 'ar-SA';
+            chunkUtterance.rate = 0.95; // Slightly slower for better reliability
+            
+            // When this chunk ends, play the next one
+            chunkUtterance.onend = () => {
+              speakNextChunk(index + 1);
+            };
+            
+            // If there's an error with this chunk, try to continue with the next one
+            chunkUtterance.onerror = (event) => {
+              console.error(`Error with Arabic chunk ${index}:`, event);
+              // Try to continue with the next chunk after a brief pause
+              setTimeout(() => {
+                speakNextChunk(index + 1);
+              }, 300);
+            };
+            
+            // Play this chunk
+            window.speechSynthesis.speak(chunkUtterance);
+          };
+          
+          // Start speaking the first chunk
+          speakNextChunk(0);
+          
+          // Return early as we're handling this with our chunking system
+          return;
+        } catch (error) {
+          console.error('Error in Arabic chunked speech, falling back to normal synthesis:', error);
+          // We'll continue with the normal approach below
+        }
+      }
 
       const utterance = new SpeechSynthesisUtterance(text);
       currentUtterance.current = utterance;
@@ -113,13 +225,12 @@ export function useSpeechSynthesis() {
         };
       }
 
-      // Check if the text contains Arabic characters
-      const containsArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+      // Note: containsArabic is already defined earlier in this function
       
       // Convert language code to match voice format
       // Force ar-SA for any text with Arabic characters, regardless of the specified language
       let langCode = lang;
-      if (containsArabic || lang.toLowerCase().startsWith('ar')) {
+      if (hasArabicScript || lang.toLowerCase().startsWith('ar')) {
         langCode = 'ar-SA';
         console.log('Arabic text detected, using ar-SA language code');
       }
@@ -130,7 +241,7 @@ export function useSpeechSynthesis() {
       // Try specialized voice selection for Arabic text
       let voice = null;
       
-      if (containsArabic || langCode === 'ar-SA') {
+      if (hasArabicScript || langCode === 'ar-SA') {
         // First, try to find an exact ar-SA voice
         voice = voices.find(v => v.lang === 'ar-SA');
         
@@ -239,6 +350,58 @@ export function useSpeechSynthesis() {
           currentUtterance.current = null;
         }
         
+        // Check if this is Arabic text 
+        const textHasArabicScript = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(utterance.text);
+        
+        // Special handling for Arabic text or other RTL languages
+        if (textHasArabicScript) {
+          // For Arabic text, if we get "interrupted" errors, try again with a different approach
+          if (event.error === "interrupted" || event.error === "canceled") {
+            console.log('Arabic speech interrupted or canceled, attempting recovery...');
+            
+            // Wait a brief moment then try again with a shorter segment or different rate
+            setTimeout(() => {
+              if (!window.speechSynthesis.speaking) {
+                try {
+                  // Create a new utterance with the same text but modified parameters
+                  const newUtterance = new SpeechSynthesisUtterance(utterance.text);
+                  
+                  // Try using the same voice if available
+                  if (utterance.voice) {
+                    newUtterance.voice = utterance.voice;
+                  }
+                  
+                  // Use the same language
+                  newUtterance.lang = utterance.lang;
+                  
+                  // Adjust rate slightly to make it more reliable
+                  newUtterance.rate = 0.9; // Slightly slower rate often helps with errors
+                  
+                  // Don't show errors for the retry attempt
+                  newUtterance.onerror = () => {
+                    setIsSpeaking(false);
+                    // Just silently fail on retry without showing error to user
+                  };
+                  
+                  newUtterance.onend = () => {
+                    setIsSpeaking(false);
+                  };
+                  
+                  // Try speaking again
+                  window.speechSynthesis.speak(newUtterance);
+                  console.log("Recovery attempt for Arabic speech");
+                } catch (e) {
+                  console.error("Arabic speech recovery attempt failed:", e);
+                  // Don't show error for recovery attempt
+                }
+              }
+            }, 300); // Small delay before retry
+            
+            return; // Don't show error toasts for Arabic text when retrying
+          }
+        }
+        
+        // For non-Arabic text or non-interrupted errors, proceed with normal error handling
         // Increment error counter
         speechErrorCount.current += 1;
         
@@ -247,17 +410,17 @@ export function useSpeechSynthesis() {
           resetSpeechSynthesis();
         }
         
-        // Only show error toast for errors other than "canceled"
-        // "canceled" errors are common and expected when navigating or starting new speech
-        if (event.error !== "canceled") {
+        // Only show error toast for errors other than "canceled" or "interrupted"
+        // These errors are common and expected when navigating or starting new speech
+        if (event.error !== "canceled" && event.error !== "interrupted") {
           toast({
             variant: "destructive",
             title: "Speech Playback Error",
             description: "Failed to play audio. Try tapping the play button again."
           });
         } else {
-          // Just log canceled errors without showing a toast
-          console.log('Speech synthesis canceled');
+          // Just log these expected errors without showing a toast
+          console.log(`Speech synthesis ${event.error}`);
         }
       };
 
