@@ -1532,30 +1532,23 @@ export function useOpenAISpeechRecognition({
         console.log("[OpenAI WebRTC] Updated listen mode roomId with prefix:", roomId);
       }
       
-      // For listen mode, use a timestamp-based deduplication approach
+      // For listen mode, use a shared counter across all handlers to completely prevent duplication
       if (isListenPage) {
-        // Create a message fingerprint - use only the first 20 chars to avoid overly specific matching
-        const messageKey = `${sourceText.substring(0, 20)}-${translatedText.substring(0, 20)}`;
+        // Create a message fingerprint
+        const messageKey = `${sourceText}-${translatedText}`;
         
-        // Use a global cache with timestamps for listen mode messages
-        const processedMessagesMap = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
-        const now = Date.now();
-        const lastProcessed = processedMessagesMap[messageKey] || 0;
+        // Use a global cache for all listen mode messages
+        const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
         
-        // Only block messages that were processed very recently (within 1 second)
-        // This allows for better handling of similar messages that are legitimate retries
-        if (lastProcessed && (now - lastProcessed < 1000)) {
-          console.log(`[OpenAI WebRTC] Detected duplicate message in listen mode:`, sourceText.substring(0, 30) + "...");
-          
-          // Important: In Listen mode, we NEVER block messages to ensure smooth TTS
-          // Just log it but still continue processing
-          console.log(`[OpenAI WebRTC] Still allowing speech in listen mode for smooth playback`);
-        } else {
-          console.log(`[OpenAI WebRTC] First time processing this message in listen mode:`, sourceText.substring(0, 30) + "...");
+        // Check if we've seen this message before in listen mode
+        if (processedMessages[messageKey]) {
+          console.log(`[OpenAI WebRTC] BLOCKING message already processed in listen mode:`, sourceText.substring(0, 30) + "...");
+          return;
         }
         
-        // Update the timestamp for this message
-        processedMessagesMap[messageKey] = now;
+        // Mark as processed (forever in this session)
+        processedMessages[messageKey] = true;
+        console.log(`[OpenAI WebRTC] First time processing this message in listen mode:`, sourceText.substring(0, 30) + "...");
       } else {
         // Regular chat mode uses a time-based deduplication window (2 seconds)
         const deduplicationWindow = 2000;
