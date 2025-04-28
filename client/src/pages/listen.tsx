@@ -387,7 +387,17 @@ export default function Listen() {
     // Enable playback in Listen mode
     if (filteredText && speakerEnabled) {
       console.log(`Listen page: Playing audio in target language: ${targetLang}`);
+      
+      // Set the force play flag before speaking
+      (window as any).__forcePlayNextUtterance = true;
+      
+      // Speak with proper language code
       speak(filteredText, getLanguageCode(lang), true);
+      
+      // Reset the flag after a small delay to ensure it's still set when the utterance is created
+      setTimeout(() => {
+        (window as any).__forcePlayNextUtterance = false;
+      }, 100);
     } else {
       console.log(`Listen page: Playback skipped, speaker enabled: ${speakerEnabled}`);
     }
@@ -435,6 +445,17 @@ export default function Listen() {
         const hasRtlChars = /[\u0591-\u07FF\u200F\u202B\u202E\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(utterance.text);
         const looksPossiblyArabic = /[\u0600-\u06FF]/.test(utterance.text);
         
+        // Log detailed information to help with debugging
+        if (hasRtlChars || looksPossiblyArabic) {
+          addDebugLog(`Text contains RTL characters: ${hasRtlChars}, Arabic script: ${looksPossiblyArabic}`);
+        }
+        
+        // Enable target-language-only mode by default
+        if ((window as any).__playOnlyTargetLanguage === undefined) {
+          (window as any).__playOnlyTargetLanguage = true;
+          addDebugLog(`Setting default __playOnlyTargetLanguage = true`);
+        }
+        
         // In OpenAI target-language-only mode, we want to play the translated text 
         // regardless of the language code provided
         const isTargetLanguageArabic = targetLangCode === 'ar';
@@ -450,11 +471,16 @@ export default function Listen() {
           (window as any).__playOnlyTargetLanguage === true
         ) {
           // Force the correct language for the utterance
+          const originalLang = utterance.lang;
+          
           if (isTargetLanguageArabic && looksPossiblyArabic) {
             utterance.lang = 'ar-SA';
+            addDebugLog(`Fixed Arabic language code: ${originalLang} → ar-SA`);
           } else if (targetLangCode && !uttLang.includes(targetLangCode)) {
             // For other languages, try to use the target language code
-            utterance.lang = getLanguageCode(targetLang);
+            const newLangCode = getLanguageCode(targetLang);
+            utterance.lang = newLangCode;
+            addDebugLog(`Fixed language code: ${originalLang} → ${newLangCode}`);
           }
           
           addDebugLog(`✓ ALLOWING speech with text "${utterance.text.substring(0, 20)}..." (lang: ${utterance.lang})`);
