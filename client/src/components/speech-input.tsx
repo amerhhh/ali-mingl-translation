@@ -687,24 +687,40 @@ export function SpeechInput({
               // For OpenAI, use the await since it returns a Promise<boolean>
               success = await startListeningOpenAI();
               
-              // If OpenAI fails after retries, fall back to WebSpeech
+              // Check if we're in listen mode
+              const isListenPage = window.location.pathname.includes('/listen');
+              
+              // If OpenAI fails after retries, handle differently based on mode
               if (!success && retryCount === maxRetries - 1) {
-                console.warn("OpenAI speech recognition failed to start. Falling back to WebSpeech");
-                toast({
-                  title: "Switching to Basic Mode",
-                  description: "Advanced mode (OpenAI) failed to start. Using browser speech recognition instead.",
-                  variant: "default",
-                  duration: 5000
-                });
-                
-                // Set state first, then try WebSpeech after a delay
-                setUseOpenAI(false);
-                
-                // Try WebSpeech after a delay to allow state update
-                setTimeout(() => {
-                  console.log("Trying WebSpeech as fallback");
-                  startListeningWebSpeech();
-                }, 1000);
+                if (isListenPage) {
+                  // In listen mode, NEVER fall back to WebSpeech
+                  console.warn("OpenAI speech recognition failed to start in listen mode. NOT falling back to WebSpeech.");
+                  toast({
+                    title: "Advanced Mode Required",
+                    description: "Listen mode requires advanced OpenAI speech recognition. Please try again.",
+                    variant: "destructive",
+                    duration: 5000
+                  });
+                  // Keep useOpenAI true and just notify the user
+                } else {
+                  // Only in chat mode, allow fallback to WebSpeech
+                  console.warn("OpenAI speech recognition failed to start. Falling back to WebSpeech");
+                  toast({
+                    title: "Switching to Basic Mode",
+                    description: "Advanced mode (OpenAI) failed to start. Using browser speech recognition instead.",
+                    variant: "default",
+                    duration: 5000
+                  });
+                  
+                  // Set state first, then try WebSpeech after a delay
+                  setUseOpenAI(false);
+                  
+                  // Try WebSpeech after a delay to allow state update
+                  setTimeout(() => {
+                    console.log("Trying WebSpeech as fallback in chat mode");
+                    startListeningWebSpeech();
+                  }, 1000);
+                }
               }
             } else {
               console.log(`Starting WebSpeech recognition (attempt ${retryCount + 1}/${maxRetries})`);
