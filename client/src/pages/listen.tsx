@@ -431,9 +431,33 @@ export default function Listen() {
         // Add to debug logs
         addDebugLog(`Speech request - text: "${utterance.text.substring(0, 20)}..." lang: ${uttLang}`);
         
-        // ONLY allow if it explicitly matches target language
-        if (uttLang.includes(targetLangCode)) {
-          addDebugLog(`✓ ALLOWING target language speech (${uttLang})`);
+        // Get text direction to help identify language - arabic text will have RTL characters
+        const hasRtlChars = /[\u0591-\u07FF\u200F\u202B\u202E\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(utterance.text);
+        const looksPossiblyArabic = /[\u0600-\u06FF]/.test(utterance.text);
+        
+        // In OpenAI target-language-only mode, we want to play the translated text 
+        // regardless of the language code provided
+        const isTargetLanguageArabic = targetLangCode === 'ar';
+        
+        if (
+          // Check for our force play flag first
+          (window as any).__forcePlayNextUtterance === true ||
+          // Allow text that actually has the right language code
+          uttLang.includes(targetLangCode) || 
+          // SPECIAL FIX FOR ARABIC: Accept Arabic text even if language code is wrong
+          (isTargetLanguageArabic && (hasRtlChars || looksPossiblyArabic)) ||
+          // FIX FOR OPENAI: Force play any speech coming from our OpenAI speech recognizer
+          (window as any).__playOnlyTargetLanguage === true
+        ) {
+          // Force the correct language for the utterance
+          if (isTargetLanguageArabic && looksPossiblyArabic) {
+            utterance.lang = 'ar-SA';
+          } else if (targetLangCode && !uttLang.includes(targetLangCode)) {
+            // For other languages, try to use the target language code
+            utterance.lang = getLanguageCode(targetLang);
+          }
+          
+          addDebugLog(`✓ ALLOWING speech with text "${utterance.text.substring(0, 20)}..." (lang: ${utterance.lang})`);
           originalSpeak.call(window.speechSynthesis, utterance);
         } else {
           addDebugLog(`✗ BLOCKING non-target language speech (${uttLang})`);

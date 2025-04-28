@@ -802,8 +802,16 @@ export function useOpenAISpeechRecognition({
                         utterance.lang = langCode;
                         utterance.volume = 1.0;
                         
+                        // Set special flag to ensure our utterance isn't blocked
+                        (window as any).__forcePlayNextUtterance = true;
+                        
                         // Play the translation using speech synthesis
                         window.speechSynthesis.speak(utterance);
+                        
+                        // Reset flag
+                        setTimeout(() => {
+                          (window as any).__forcePlayNextUtterance = false;
+                        }, 100);
                       }
                     }
                   }
@@ -965,8 +973,16 @@ export function useOpenAISpeechRecognition({
                     utterance.lang = langCode;
                     utterance.volume = 1.0;
                     
+                    // Set special flag to ensure our utterance isn't blocked
+                    (window as any).__forcePlayNextUtterance = true;
+                    
                     // Play the translation using speech synthesis
                     window.speechSynthesis.speak(utterance);
+                    
+                    // Reset flag
+                    setTimeout(() => {
+                      (window as any).__forcePlayNextUtterance = false;
+                    }, 100);
                   }
                   
                   // Also send to the server, but don't reset isComplete flag yet
