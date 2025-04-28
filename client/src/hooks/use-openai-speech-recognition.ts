@@ -351,17 +351,27 @@ export function useOpenAISpeechRecognition({
             // Store the stream for later use
             (window as any).__openAIOriginalStream = e.streams[0];
             
-            // UPDATED: Always set audio source in Listen mode to allow real-time OpenAI voice
-            // And don't set it in Chat mode unless configured to do so
-            if (isListenPage) {
+            // Check if we're in listen mode and only playing target language
+            // This global setting will be controlled by the UI switch "Play target language"
+            // When true (default), we'll use speech synthesis to play only translations 
+            // When false, we'll play the full OpenAI stream (which includes source repetition)
+            const playOnlyTargetLanguage = (window as any).__playOnlyTargetLanguage;
+            
+            if (isListenPage && !playOnlyTargetLanguage) {
+              // In Listen page but user wants to hear the full audio (including source lang)
               remoteAudioElement.current.srcObject = e.streams[0];
               
               // Set up the audio element for immediate playback in Listen mode
               remoteAudioElement.current.autoplay = true;
               remoteAudioElement.current.volume = 1.0;
               
-              console.log('[OpenAI WebRTC] Set audio source for remote audio element in Listen page to enable real-time translation audio');
+              console.log('[OpenAI WebRTC] Set audio source for remote audio element (FULL AUDIO mode)');
+            } else if (isListenPage && playOnlyTargetLanguage) {
+              // In Listen page and user wants target language only
+              // We don't set srcObject here - translations will be played via speech synthesis
+              console.log('[OpenAI WebRTC] TARGET LANGUAGE ONLY mode - not setting audio source');
             } else if (!isChatPage) {
+              // Not in Listen or Chat page - normal behavior
               remoteAudioElement.current.srcObject = e.streams[0];
               console.log('[OpenAI WebRTC] Set audio source for remote audio element in non-Chat page');
             } else {

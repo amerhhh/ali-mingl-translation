@@ -112,7 +112,7 @@ const defaultUiText = {
   on: "On",
   off: "Off",
   enterRoomId: "Enter room ID",
-  replayTranslated: "Play translated words",
+  replayTranslated: "Only play target language (recommended)",
   scanToChat: "Scan to Chat With Me in",
   inputDevice: "Input Device",
   outputDevice: "Output Device",
@@ -191,8 +191,16 @@ export default function Listen() {
   } | null>(null);
   const [uiText, setUiText] = useState(defaultUiText);
   const [showRoomOptions, setShowRoomOptions] = useState(false);
-  const [playTargetLanguage, setPlayTargetLanguage] = useState(false);
+  // Default to true - only play target language (what the user requested)
+  const [playTargetLanguage, setPlayTargetLanguage] = useState(true);
   const [translatedQRText, setTranslatedQRText] = useState("");
+  
+  // Sync playTargetLanguage state with global variable for OpenAI processing
+  useEffect(() => {
+    // Set the global variable that will be read by the OpenAI WebRTC component
+    (window as any).__playOnlyTargetLanguage = playTargetLanguage;
+    console.log(`Updated global playTargetLanguage to: ${playTargetLanguage}`);
+  }, [playTargetLanguage]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [showIosNotice, setShowIosNotice] = useState(false);
   const [showArabicNotice, setShowArabicNotice] = useState(false);
