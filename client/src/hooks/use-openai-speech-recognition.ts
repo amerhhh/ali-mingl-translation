@@ -351,32 +351,26 @@ export function useOpenAISpeechRecognition({
             // Store the stream for later use
             (window as any).__openAIOriginalStream = e.streams[0];
             
-            // Check if we're in listen mode and only playing target language
-            // This global setting will be controlled by the UI switch "Play target language"
-            // When true (default), we'll use speech synthesis to play only translations 
-            // When false, we'll play the full OpenAI stream (which includes source repetition)
-            const playOnlyTargetLanguage = (window as any).__playOnlyTargetLanguage;
+            // In Listen mode, we always want to use our custom speech synthesis approach
+            // This ensures we have full control over what gets spoken, regardless of the setting
+            // For other modes, we'll respect the user's preference
+            const isListenMode = isListenPage;
             
-            if (isListenPage && !playOnlyTargetLanguage) {
-              // In Listen page but user wants to hear the full audio (including source lang)
-              remoteAudioElement.current.srcObject = e.streams[0];
-              
-              // Set up the audio element for immediate playback in Listen mode
-              remoteAudioElement.current.autoplay = true;
-              remoteAudioElement.current.volume = 1.0;
-              
-              console.log('[OpenAI WebRTC] Set audio source for remote audio element (FULL AUDIO mode)');
-            } else if (isListenPage && playOnlyTargetLanguage) {
-              // In Listen page and user wants target language only
-              // We need to set the audio source to null to ensure we don't play anything
-              // But we still need to process the transcript for text-to-speech
+            // Force target language only mode for Listen mode
+            if (isListenMode) {
+              // For Listen page - ALWAYS use the target language only approach
+              // This gives us full control over which voice plays and avoids source language playback
               remoteAudioElement.current.srcObject = null;
               remoteAudioElement.current.autoplay = false;
-              console.log('[OpenAI WebRTC] TARGET LANGUAGE ONLY mode - disabled direct audio playback');
+              // Force global flag to true in Listen mode
+              (window as any).__playOnlyTargetLanguage = true;
+              console.log('[OpenAI WebRTC] LISTEN MODE - forcing target language only mode');
             } else if (!isChatPage) {
-              // Not in Listen or Chat page - normal behavior
+              // Normal behavior for non-chat, non-listen pages
               remoteAudioElement.current.srcObject = e.streams[0];
-              console.log('[OpenAI WebRTC] Set audio source for remote audio element in non-Chat page');
+              remoteAudioElement.current.autoplay = true;
+              remoteAudioElement.current.volume = 1.0;
+              console.log('[OpenAI WebRTC] Set audio source for regular audio playback');
             } else {
               console.log('[OpenAI WebRTC] In Chat page - not setting audio source to prevent voice playback');
               // Don't set the audio source to prevent any playback
@@ -704,7 +698,8 @@ export function useOpenAISpeechRecognition({
                       // Check if we're in listen mode
                       const isListenPage = window.location.pathname.includes('/listen');
                       
-                      // For listen mode, use persistent tracking to completely prevent duplication
+                      // For listen mode, we want to track messages but not block them completely
+                      // This allows the proper handling by our custom speech synthesis approach
                       if (isListenPage) {
                         // Create a message fingerprint
                         const messageKey = `${sourceText}-${filteredTranslation}`;
@@ -712,16 +707,16 @@ export function useOpenAISpeechRecognition({
                         // Use a shared global cache for listen mode messages
                         const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
                         
-                        // Check if we've seen this message before in listen mode
+                        // Log if we've seen this message before, but DON'T block it
+                        // This ensures we still process it for our custom speech synthesis
                         if (processedMessages[messageKey]) {
-                          console.log(`[OpenAI WebRTC] BLOCKING duplicate item output in listen mode:`, sourceText.substring(0, 30) + "...");
-                          return;
+                          console.log(`[OpenAI WebRTC] Processing duplicate item output in listen mode:`, sourceText.substring(0, 30) + "...");
+                        } else {
+                          console.log(`[OpenAI WebRTC] First time processing this output item in listen mode:`, sourceText.substring(0, 30) + "...");
                         }
                         
-                        // Mark it as "about to be processed" to prevent duplicate processing
-                        // The sendToServer function will also check this same registry
+                        // Always mark it as processed to track frequency
                         processedMessages[messageKey] = true;
-                        console.log(`[OpenAI WebRTC] First time processing this output item in listen mode:`, sourceText.substring(0, 30) + "...");
                       } else {
                         // In chat mode, use the regular time-based deduplication
                         const lastProcessedTime = (window as any).__lastProcessedTimestamp || 0;
@@ -869,24 +864,15 @@ export function useOpenAISpeechRecognition({
                   // Use a shared global cache for listen mode messages
                   const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
                   
-                  // Check if we've seen this message before in listen mode
+                  // In Listen mode, we need to process the message even if it's a duplicate
+                  // but we'll log it for debugging
                   if (processedMessages[messageKey]) {
-                    console.log(`[OpenAI WebRTC] BLOCKING duplicate complete transcript in listen mode:`, sourceText.substring(0, 30) + "...");
-                    
-                    // Reset transcript to prevent further processing attempts
-                    window.__openAIRawTranscription = {
-                      sourceText: '',
-                      translatedText: '',
-                      isComplete: false,
-                      isSourceComplete: false
-                    };
-                    
-                    return;
+                    console.log(`[OpenAI WebRTC] Processing duplicate transcript in listen mode:`, sourceText.substring(0, 30) + "...");
+                  } else {
+                    // Mark it as processed for tracking purposes
+                    processedMessages[messageKey] = true;
+                    console.log(`[OpenAI WebRTC] First time processing this output item in listen mode:`, sourceText.substring(0, 30) + "...");
                   }
-                  
-                  // Mark it as processed to prevent duplicate processing elsewhere
-                  processedMessages[messageKey] = true;
-                  console.log(`[OpenAI WebRTC] First time processing complete transcript in listen mode:`, sourceText.substring(0, 30) + "...");
                 }
                 // If not in listen mode, use our previous deduplication approach
                 else {
