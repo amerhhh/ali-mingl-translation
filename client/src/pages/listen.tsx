@@ -201,6 +201,14 @@ export default function Listen() {
     (window as any).__playOnlyTargetLanguage = playTargetLanguage;
     console.log(`Updated global playTargetLanguage to: ${playTargetLanguage}`);
   }, [playTargetLanguage]);
+  
+  // Force playTargetLanguage to be true when component mounts
+  useEffect(() => {
+    // Force it to be true on initial load (this is the recommended setting)
+    setPlayTargetLanguage(true);
+    (window as any).__playOnlyTargetLanguage = true;
+    console.log('Forcing playTargetLanguage to true on initial mount');
+  }, []);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [showIosNotice, setShowIosNotice] = useState(false);
   const [showArabicNotice, setShowArabicNotice] = useState(false);
