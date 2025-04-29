@@ -612,6 +612,9 @@ export default function Listen() {
     };
   }, [targetLang, addDebugLog]);
   
+  // Global registry of played translations to prevent duplicates
+  const playedTranslationRegistry = useRef<{[key: string]: boolean}>({});
+  
   // Set up effect to play latest messages automatically
   useEffect(() => {
     const latestMessage = messages[messages.length - 1];
@@ -663,6 +666,41 @@ export default function Listen() {
             return;
           }
           
+          // For WebSpeech streaming, we need to check if this message is a "final" version of something
+          // that we've already played in chunks. We'll use a combination of timestamp and content matching
+          if (usingWebSpeech) {
+            // Get the current registry of played translations from either this component or global state
+            const globalRegistry = (window as any).__listenModePlayedTranslations || {};
+            const registry = { ...globalRegistry, ...playedTranslationRegistry.current };
+            
+            // Create a fingerprint for this translation (first 15 chars for partial matching)
+            const translationPrefix = filteredText.substring(0, 15);
+            
+            // Check if we have a record of playing something with this prefix
+            // This catches cases where the final translation is just a completed version of already played chunks
+            const hasPlayedSimilar = Object.keys(registry).some(key => {
+              // If this exact message or a substantial part of it has been played
+              return key === filteredText || 
+                    // If this message contains a prefix we've already played
+                    (key.length >= 15 && filteredText.includes(key.substring(0, 15))) ||
+                    // If a message we've played contains this message's prefix
+                    (translationPrefix.length >= 10 && key.includes(translationPrefix));
+            });
+            
+            // If we've played something similar recently, skip playing this message
+            if (hasPlayedSimilar) {
+              console.log("Listen page: Skipping already played WebSpeech translation:", filteredText.substring(0, 30) + "...");
+              return;
+            }
+            
+            // Mark this translation as played to prevent future duplicates
+            playedTranslationRegistry.current[filteredText] = true;
+            (window as any).__listenModePlayedTranslations = { ...globalRegistry, [filteredText]: true };
+            
+            // Log that we're playing this as a new translation
+            console.log("Listen page: Playing NEW WebSpeech message translation");
+          }
+          
           // Set a flag to force the next utterance to play, regardless of language detection
           (window as any).__forcePlayNextUtterance = true;
           console.log("Listen page: Setting force play flag for next utterance");
@@ -690,8 +728,7 @@ export default function Listen() {
               }, 100);
             }, 300);
           } else if (usingWebSpeech) {
-            // For WebSpeech mode, we need to play the audio through the useEffect
-            console.log("Listen page: Playing latest WebSpeech message translation");
+            // For WebSpeech mode, play the audio (we've already checked for duplicates above)
             handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
             // Reset force flag after a small delay
             setTimeout(() => {
