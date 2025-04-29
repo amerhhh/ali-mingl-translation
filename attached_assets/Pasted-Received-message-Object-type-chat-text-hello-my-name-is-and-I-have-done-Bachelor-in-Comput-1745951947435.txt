@@ -1,0 +1,22 @@
+Received message: 
+Object {type: "chat", text: "hello my name is and I have done Bachelor in Computer Science from Federal Urdu University Islamabad", translatedText: "مرحبًا، اسمي هو وقد حصلت على درجة البكالوريوس في علوم الحاسوب من الجامعة الفيدرالية الأوردو في…", sourceLang: "en", targetLang: "ar", …}
+Adding new message to chat: 
+Object {text: "hello my name is and I have do...", translatedText: "مرحبًا، اسمي هو وقد حصلت على د...", sourceLang: "en", targetLang: "ar", timestamp: "2025-04-29T18:38:32.319Z", …}
+Received translation for WebSpeech message: مرحبًا، اسمي هو وقد حصلت على درجة البكالوريوس في علوم الحاسوب من الجامعة الفيدرالية الأوردو في إسلام آباد.
+[WebSpeech] Processing message in listen mode with dedupKey
+WEBSPEECH TRANSLATION RECEIVED: 
+Object {sourceText: "hello my name is and I have done Bachelor in Computer Science from Federal Urdu University Islamabad", translatedText: "مرحبًا، اسمي هو وقد حصلت على درجة البكالوريوس في علوم الحاسوب من الجامعة الفيدرالية الأوردو في…"}
+ WebSpeech Translation Status  Source text: hello my name is and I have done Bachelor in Computer Science from Federal Urdu University Islamabad Translation: مرحبًا، اسمي هو وقد حصلت على درجة البكالوريوس في علوم الحاسوب من الجامعة الفيدرالية الأوردو في إسلام آباد. Both will be displayed in chat with the Translation label
+[WebSpeech] BLOCKING similar translation in listen mode: hello my name is and I have do...
+[WebSpeech] Matched with existing key: hello my name|مرحبًا اسمي...
+Listen page: New message detected, checking for playback: 
+Object {text: "hello my name is and I have done Bachelor in Computer Science from Federal Urdu University Islamabad", translatedText: "مرحبًا، اسمي هو وقد حصلت على درجة البكالوريوس في علوم الحاسوب من الجامعة الفيدرالية الأوردو في…", sourceLang: "en", targetLang: "ar", timestamp: "2025-04-29T18:38:32.319Z", …}
+Listen page: Processing new message created in current session:
+      - Message timestamp: 2025-04-29T18:38:32.319Z
+      - Session started: 2025-04-29T18:37:51.443Z
+      - Message age: -1s ago
+Error with Arabic chunk 2 (interrupted): 
+SpeechSynthesisErrorEvent {isTrusted: true}
+
+Arabic speech interrupted, advancing to next chunk
+Listen page: Skipping already played WebSpeech translation: مرحبًا، اسمي هو وقد حصلت على د...

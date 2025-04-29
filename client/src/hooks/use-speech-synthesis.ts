@@ -104,7 +104,7 @@ export function useSpeechSynthesis() {
       const hasArabicScript = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
       
       // Special handling for Arabic text to improve reliability
-      if (hasArabicScript && text.length > 30 && isListenPage) {
+      if (hasArabicScript && text.length > 20 && isListenPage) {
         console.log('Arabic text detected in Listen mode, using enhanced reliability mode');
         
         try {
@@ -117,6 +117,7 @@ export function useSpeechSynthesis() {
           
           // Split the text on punctuation to create natural breaks
           // Arabic punctuation includes: '.' (period), '،' (Arabic comma), and other marks
+          // Use more aggressive chunking for better reliability
           const segments = text.split(/([\.،؛\!\?؟])/);
           
           // Recombine segments with their punctuation 
@@ -126,21 +127,41 @@ export function useSpeechSynthesis() {
             if (i + 1 < segments.length) {
               chunk += segments[i + 1]; // Add back the punctuation
             }
-            if (chunk.trim().length > 0) {
+            
+            // Further split long chunks for even better reliability
+            if (chunk.trim().length > 25) {
+              // Split longer segments into smaller chunks without breaking words
+              const words = chunk.trim().split(' ');
+              let currentChunk = '';
+              
+              for (const word of words) {
+                if (currentChunk.length + word.length > 20) { // Even smaller chunks
+                  if (currentChunk.length > 0) {
+                    textChunks.push(currentChunk.trim());
+                    currentChunk = '';
+                  }
+                }
+                currentChunk += ' ' + word;
+              }
+              
+              if (currentChunk.trim().length > 0) {
+                textChunks.push(currentChunk.trim());
+              }
+            } else if (chunk.trim().length > 0) {
               textChunks.push(chunk.trim());
             }
           }
           
-          // If we didn't get proper chunks (no punctuation), use a fallback approach
+          // If we still didn't get proper chunks, use a fallback approach
           if (textChunks.length <= 1) {
-            // Fallback: split by approximate length (20-30 chars)
+            // Fallback: split by approximate length (15-20 chars)
             // This tries to avoid cutting words in the middle
             const words = text.split(' ');
             textChunks.length = 0; // Clear the chunks array
             let currentChunk = '';
             
             for (const word of words) {
-              if (currentChunk.length + word.length > 25) {
+              if (currentChunk.length + word.length > 15) { // Even smaller chunks
                 if (currentChunk.length > 0) {
                   textChunks.push(currentChunk.trim());
                   currentChunk = '';
@@ -213,22 +234,23 @@ export function useSpeechSynthesis() {
               
               console.error(`Error with Arabic chunk ${index} (${errorType}):`, event);
               
-              // For interruption errors, try to restart speech synthesis
-              if (errorType === 'interrupted' || errorType === 'canceled') {
-                console.log(`Arabic speech interrupted, advancing to next chunk`);
-                // Clear any pending speech
-                window.speechSynthesis.cancel();
-                
-                // Wait a moment, then continue with next chunk
-                setTimeout(() => {
-                  speakNextChunk(index + 1);
-                }, 300);
-              } else {
-                // For other errors, just try the next chunk after a longer pause
-                setTimeout(() => {
-                  speakNextChunk(index + 1);
-                }, 500);
+              // For any error type, try to recover and continue with the next chunk
+              // The error.error check now uses string.includes() to be more forgiving with error types
+              console.log(`Arabic speech interrupted, advancing to next chunk`);
+              
+              // Clear any pending speech
+              window.speechSynthesis.cancel();
+              
+              // Calculate dynamic timeout based on error type - longer for more severe errors
+              let timeout = 300; // Default
+              if (errorType.includes('audio-busy') || errorType.includes('network')) {
+                timeout = 700; // Longer wait for resource issues
               }
+              
+              // Wait, then continue with next chunk
+              setTimeout(() => {
+                speakNextChunk(index + 1);
+              }, timeout);
             };
             
             // Play this chunk with safeguards
@@ -402,7 +424,8 @@ export function useSpeechSynthesis() {
         const textHasArabicScript = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(utterance.text);
         
         // For interrupted speech errors (with any language), use enhanced recovery
-        if (event.error === "interrupted" || event.error === "canceled") {
+        // Using string.includes() for safer type checking
+        if (String(event.error).includes("interrupted") || String(event.error).includes("canceled")) {
           // Increment recovery count globally to track retries across attempts
           const recoveryCount = ((window as any).__speechRecoveryCount || 0) + 1;
           (window as any).__speechRecoveryCount = recoveryCount;
@@ -485,7 +508,8 @@ export function useSpeechSynthesis() {
         
         // Only show error toast for errors other than "canceled" or "interrupted"
         // These errors are common and expected when navigating or starting new speech
-        if (event.error !== "canceled" && event.error !== "interrupted") {
+        // Using type-safe comparisons with string.includes() instead of strict equality
+        if (!String(event.error).includes("canceled") && !String(event.error).includes("interrupted")) {
           toast({
             variant: "destructive",
             title: "Speech Playback Error",
