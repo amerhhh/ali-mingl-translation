@@ -552,21 +552,39 @@ export function useOpenAISpeechRecognition({
                       window.__openAIRawTranscription.translatedText += delta;
                     }
                     
-                    // STREAMING: Check if we should process the current chunk in listen mode
+                    // STREAMING: Enhanced streaming for more aggressive chunk processing in listen mode
                     if (window.__streamingEnabled && window.__openAIRawTranscription.isSourceComplete) {
                       const now = Date.now();
                       const timeSinceLastChunk = now - (window.__lastStreamingChunkTime || 0);
                       
-                      // Process if enough time has passed since last chunk was processed
-                      if (timeSinceLastChunk >= window.__streamingChunkInterval && 
-                          window.__openAIRawTranscription.sourceText.trim() && 
-                          window.__openAIRawTranscription.translatedText.trim()) {
+                      // More lenient requirements for text processing
+                      const { sourceText, translatedText } = window.__openAIRawTranscription;
+                      const hasReasonableContent = sourceText.trim().length > 10 && translatedText.trim().length > 5;
+                      
+                      // Process if enough time has passed OR we have substantial content
+                      if ((timeSinceLastChunk >= window.__streamingChunkInterval && hasReasonableContent) ||
+                          // Also process when we have substantial content, regardless of time passed
+                          (sourceText.length > 50 && translatedText.length > 20)) {
                         
-                        // Only process if we have substantial text that's different from last processed
-                        const { sourceText, translatedText } = window.__openAIRawTranscription;
+                        // Process if different enough from last processed text
+                        // Using a simpler approach - check the last 20 characters of source
+                        let isSubstantialDifference = true;
                         
-                        // Don't process too small chunks or duplicates
-                        if (sourceText.length > 5 && sourceText !== window.__streamingLastProcessedText) {
+                        if (window.__streamingLastProcessedText) {
+                          // Get the end of the last processed text for comparison
+                          const lastChars = window.__streamingLastProcessedText.substring(
+                            Math.max(0, window.__streamingLastProcessedText.length - 20)
+                          );
+                          
+                          // Check if our source contains this ending (indicating not much new content)
+                          const containsLastEnding = sourceText.includes(lastChars) && 
+                                                    sourceText.length < window.__streamingLastProcessedText.length + 10;
+                                                    
+                          // Only block processing if not much new content
+                          isSubstantialDifference = !containsLastEnding;
+                        }
+                        
+                        if (isSubstantialDifference) {
                           console.log("[OpenAI WebRTC] Processing streaming chunk:", {
                             timeSinceLastChunk,
                             sourceTextLength: sourceText.length,
@@ -1344,7 +1362,7 @@ export function useOpenAISpeechRecognition({
       const isListenPage = window.location.pathname.includes('/listen');
       window.__streamingEnabled = isListenPage; // Only enable streaming in listen mode
       window.__lastStreamingChunkTime = 0;
-      window.__streamingChunkInterval = 3000; // Process every 3 seconds in listen mode
+      window.__streamingChunkInterval = 2000; // Process every 2 seconds in listen mode (more frequent)
       window.__streamingLastProcessedText = '';
       
       console.log(`[OpenAI Speech] Streaming ${window.__streamingEnabled ? 'enabled' : 'disabled'}, chunk interval: ${window.__streamingChunkInterval}ms`);

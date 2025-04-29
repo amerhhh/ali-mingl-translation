@@ -153,17 +153,19 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
         }
       }
       
-      // Check if we should process streaming chunk
+      // Enhanced streaming chunk processing - more aggressive for better UX
       if (window.__webSpeechStreamingEnabled) {
         const now = Date.now();
         const timeSinceLastChunk = now - (window.__webSpeechLastStreamingChunkTime || 0);
-        const hasSubstantialText = finalText.length > 20 || (finalText.length > 5 && interimText.length > 10);
-        const isNewContent = finalText !== window.__webSpeechStreamingLastProcessedText;
         
-        // Process if enough time has passed since last chunk was processed and we have substantial text
-        if (timeSinceLastChunk >= window.__webSpeechStreamingChunkInterval && 
-            hasSubstantialText && 
-            isNewContent) {
+        // More lenient text requirements - process even with less text
+        const totalContentLength = (finalText + ' ' + interimText).trim().length;
+        const hasAnyReasonableText = totalContentLength > 15; // Lower threshold for content
+        
+        // Process much more frequently when we have at least some text
+        if ((timeSinceLastChunk >= window.__webSpeechStreamingChunkInterval && hasAnyReasonableText) || 
+            // Also process when we have substantial interim results, regardless of time
+            (interimText.length > 30)) {
           
           // Create temporary final text that includes both final and interim text
           const combinedText = (finalText + ' ' + interimText).trim();
@@ -186,7 +188,14 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
           
           // Update tracking variables
           window.__webSpeechLastStreamingChunkTime = now;
-          window.__webSpeechStreamingLastProcessedText = finalText;
+          
+          // Don't set lastProcessedText to the full final text - this prevents future chunks
+          // from being blocked if they contain similar content
+          if (finalText.length > 0) {
+            // Only store the last portion of the text to allow overlapping content
+            const endIndex = Math.max(0, finalText.length - 20);
+            window.__webSpeechStreamingLastProcessedText = finalText.substring(endIndex);
+          }
           
           // Return early to avoid overwriting our streaming result
           return;
@@ -330,7 +339,7 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
       const isListenPage = window.location.pathname.includes('/listen');
       window.__webSpeechStreamingEnabled = isListenPage; // Only enable streaming in listen mode
       window.__webSpeechLastStreamingChunkTime = 0;
-      window.__webSpeechStreamingChunkInterval = 3000; // Process every 3 seconds in listen mode
+      window.__webSpeechStreamingChunkInterval = 2000; // Process every 2 seconds in listen mode
       window.__webSpeechStreamingLastProcessedText = '';
       
       console.log(`WebSpeech starting at ${now}, marked as active globally`);
