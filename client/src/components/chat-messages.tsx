@@ -206,10 +206,13 @@ export function ChatMessages({
                 // Special rendering for OpenAI messages
                 if (message.isOpenAI) {
                   return (
-                    <div className={cn(
-                      "flex w-full gap-2 mb-4",
-                      message.isCurrentUser ? "flex-row-reverse" : "flex-row"
-                    )}>
+                    <div
+                      key={`${message.temp_user_uuid}-${messageIndex}-openai`}
+                      className={cn(
+                        "flex w-full gap-2 mb-4",
+                        message.isCurrentUser ? "flex-row-reverse" : "flex-row"
+                      )}
+                    >
                       <div className="flex-shrink-0 text-2xl w-8 h-8 flex items-center justify-center">
                         {message.userEmoji}
                       </div>

@@ -537,24 +537,54 @@ export function SpeechInput({
         // For listen mode, use persistent tracking to completely prevent duplication
         if (isListenPage) {
           // Create a message fingerprint
-          const messageKey = `${transcriptResult.finalText}`;
+          // Enhanced duplicate detection to prevent repetitive speech
+          // Create a more unique fingerprint that captures the essence of the message
+          let messageFingerprint = '';
+          const trimmedText = transcriptResult.finalText.trim();
           
-          // Use a time window-based approach for deduplication
-          const timeWindow = Math.floor(Date.now() / 30000); // 30-second window
-          const dedupKey = `${messageKey}-${timeWindow}`;
+          if (trimmedText.length > 30) {
+            // For longer text, create a more robust fingerprint from multiple parts of the text
+            const beginning = trimmedText.substring(0, 10);
+            const middle = trimmedText.substring(Math.floor(trimmedText.length / 2) - 5, Math.floor(trimmedText.length / 2) + 5);
+            const end = trimmedText.substring(trimmedText.length - 10);
+            messageFingerprint = `${beginning}...${middle}...${end}`;
+          } else {
+            // For shorter text, just use the entire text
+            messageFingerprint = trimmedText;
+          }
           
-          // Use a shared global cache for all listen mode messages
-          const processedMessages = (window as any).__listenModeTranscriptsSent = (window as any).__listenModeTranscriptsSent || {};
+          // Use longer deduplication window to prevent repetition (60 seconds)
+          const deduplicationWindow = 60000;
+          const now = Date.now();
           
-          // Check if we've seen this message before in the current time window
-          if (processedMessages[dedupKey]) {
-            console.log(`[WebSpeech] BLOCKING duplicate transcript send in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
+          // Global persistent storage for similar message tracking across component lifecycle
+          const processedFingerprints = (window as any).__listenModeFingerprints = (window as any).__listenModeFingerprints || {};
+          
+          // Check if we've processed this exact fingerprint recently
+          const matchingFingerprint = Object.keys(processedFingerprints).find(fp => {
+            // Check if the fingerprint is similar and was processed recently
+            const isSimilar = (
+              // Direct match
+              fp === messageFingerprint ||
+              // Or contains significant overlap (3+ word phrases)
+              (fp.length > 15 && messageFingerprint.length > 15 && 
+               (fp.includes(messageFingerprint.substring(0, 15)) || 
+                messageFingerprint.includes(fp.substring(0, 15))))
+            );
+            
+            // Only consider it a match if it's recent enough
+            return isSimilar && (now - processedFingerprints[fp] < deduplicationWindow);
+          });
+          
+          if (matchingFingerprint) {
+            console.log(`[WebSpeech] BLOCKING similar transcript in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
+            console.log(`[WebSpeech] Matched fingerprint: ${matchingFingerprint.substring(0, 30)}...`);
             return;
           }
           
-          // Mark it as processed for this time window
-          processedMessages[dedupKey] = true;
-          console.log(`[WebSpeech] First time sending transcript in listen mode with dedupKey`);
+          // Mark this fingerprint as processed with current timestamp
+          processedFingerprints[messageFingerprint] = now;
+          console.log(`[WebSpeech] Processing new transcript in listen mode: ${trimmedText.substring(0, 30)}...`);
         }
         
         // Store the source text in the window to mimic OpenAI format
