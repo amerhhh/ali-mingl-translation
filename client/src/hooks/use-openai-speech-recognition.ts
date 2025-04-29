@@ -603,16 +603,7 @@ export function useOpenAISpeechRecognition({
                           });
                           
                           // Extract room ID for the message
-                          let roomId = 'unknown';
-                          try {
-                            const pathParts = window.location.pathname.split('/');
-                            const listenIndex = pathParts.indexOf('listen');
-                            if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
-                              roomId = `listen_${pathParts[listenIndex + 1]}`;
-                            }
-                          } catch (e) {
-                            console.error("[OpenAI WebRTC] Error extracting room ID:", e);
-                          }
+                          const roomId = extractRoomId();
                           
                           // Additional debug logging in development mode
                           if (import.meta.env.DEV || (window as any).__debugSpeech) {

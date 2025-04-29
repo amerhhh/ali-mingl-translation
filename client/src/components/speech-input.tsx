@@ -739,11 +739,11 @@ export function SpeechInput({
       isConnecting,
       usingOpenAI: window.__speechInputTracking?.usingOpenAI || false,
       webSpeechActive: (window as any).__webSpeechActive || false,
-      webRTCActive: !!peerConnection,
+      openAIActive: (window as any).__openAIActive || false,
       listenPageMode: window.location.pathname.includes('/listen'),
       streamingEnabled: window.__webSpeechStreamingEnabled || window.__streamingEnabled || false,
-      interimLength: transcript?.interimText?.length || 0,
-      finalLength: transcript?.finalText?.length || 0,
+      hasPendingMessages: (window as any).__listenModeProcessedMessages ? 
+        Object.keys((window as any).__listenModeProcessedMessages || {}).length > 0 : false,
       lastToggleTime: window.__speechInputTracking?.lastToggleTime || 0,
       timeSinceLastToggle: window.__speechInputTracking?.lastToggleTime ? 
         (Date.now() - window.__speechInputTracking.lastToggleTime) : -1
