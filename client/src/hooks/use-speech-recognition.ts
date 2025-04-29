@@ -192,11 +192,19 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
         const hasMinimalText = combinedText.length <= 25;
         const hasLongText = combinedText.length >= 40;
         
-        // Process when:
+        // Process when any of these conditions are met:
         // 1. We have significant delay (2+ seconds) AND some text, OR
-        // 2. We have a long chunk of text (40+ chars) AND reasonable delay (1+ second)
-        if ((hasSignificantDelay && hasEnoughText && combinedText !== window.__webSpeechStreamingLastProcessedText) || 
-            (hasLongText && timeSinceLastChunk >= 1000)) {
+        // 2. We have a long chunk of text (40+ chars) AND reasonable delay (1+ second), OR
+        // 3. The current combined text is substantially different from the last processed text
+        // 4. For very short chunks, we need a longer delay to avoid rapid-fire processing of small bits
+        const lastProcessedText = window.__webSpeechStreamingLastProcessedText || '';
+        const textLengthDifference = Math.abs(combinedText.length - lastProcessedText.length);
+        const isSubstantialTextGrowth = textLengthDifference > 15; // At least 15 new characters
+        
+        if ((hasSignificantDelay && hasEnoughText && combinedText !== lastProcessedText) || 
+            (hasLongText && timeSinceLastChunk >= 1000) ||
+            (isSubstantialTextGrowth && timeSinceLastChunk >= 1200) ||
+            (hasMinimalText && timeSinceLastChunk >= window.__webSpeechStreamingChunkInterval * 1.5)) {
           
           // Mark that we're processing a chunk to prevent overlapping processing
           window.__webSpeechStreamingProcessingChunk = true;

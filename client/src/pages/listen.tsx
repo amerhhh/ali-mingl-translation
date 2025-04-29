@@ -644,13 +644,30 @@ export default function Listen() {
     streamingInterval: 2000 // Process chunks every 2 seconds by default
   });
   
-  // Process the message queue in sequence
+  // Process the message queue in sequence with improved streaming handling
   const processMessageQueue = useCallback(() => {
     const queue = messageQueue.current;
     
-    // If already playing or queue is empty, do nothing
-    if (queue.isPlaying || queue.messages.length === 0) {
+    // If already playing, queue is empty, or there's a pending playback, do nothing
+    if (queue.isPlaying || queue.messages.length === 0 || queue.pendingPlayback) {
       return;
+    }
+    
+    // If we're in streaming mode, check the time since the last playback
+    if (queue.streamingEnabled) {
+      const now = Date.now();
+      const timeSinceLastPlay = now - queue.lastPlayedTimestamp;
+      
+      // Enforce a minimum gap between playbacks for better timing with streaming
+      // This prevents utterances from overlapping or playing too close together
+      const minPlaybackGap = 300; // 300ms minimum between utterances
+      if (timeSinceLastPlay < minPlaybackGap && queue.lastPlayedTimestamp > 0) {
+        // Schedule retry after gap is complete
+        setTimeout(() => {
+          processMessageQueue();
+        }, minPlaybackGap - timeSinceLastPlay + 10);
+        return;
+      }
     }
     
     // Find the first unplayed message
@@ -742,6 +759,12 @@ export default function Listen() {
     // Actually speak the text
     speak(nextMessage.text, getLanguageCode(nextMessage.lang));
     
+    // Clear the pending playback flag after a short delay
+    // This ensures we don't block the queue if something goes wrong
+    setTimeout(() => {
+      queue.pendingPlayback = false;
+    }, 1000);
+    
     // Start the detection timeout
     detectSpeechCompletion();
     
@@ -776,8 +799,9 @@ export default function Listen() {
               queue.messages[nextMessageIndex].played = true;
               // Update last played timestamp
               queue.lastPlayedTimestamp = Date.now();
-              // Reset playing flag
+              // Reset playing and pending flags
               queue.isPlaying = false;
+              queue.pendingPlayback = false;
               
               // Process next message after a short delay
               setTimeout(() => {
@@ -805,8 +829,9 @@ export default function Listen() {
             if (nextMessageIndex !== -1) {
               // Mark as played
               queue.messages[nextMessageIndex].played = true;
-              // Reset playing flag
+              // Reset playing and pending flags
               queue.isPlaying = false;
+              queue.pendingPlayback = false;
               
               // Process next message after a short delay
               setTimeout(() => {

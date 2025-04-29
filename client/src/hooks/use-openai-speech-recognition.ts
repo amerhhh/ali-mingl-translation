@@ -552,19 +552,30 @@ export function useOpenAISpeechRecognition({
                       window.__openAIRawTranscription.translatedText += delta;
                     }
                     
-                    // STREAMING: Enhanced streaming for more aggressive chunk processing in listen mode
+                    // STREAMING: Enhanced streaming for aggressive chunk processing in listen mode
                     if (window.__streamingEnabled && window.__openAIRawTranscription.isSourceComplete) {
                       const now = Date.now();
                       const timeSinceLastChunk = now - (window.__lastStreamingChunkTime || 0);
                       
+                      // Dynamic interval: shorter intervals for shorter text to create more responsive experience
+                      const dynamicInterval = Math.max(
+                        1500, // Minimum 1.5 seconds between very short chunks
+                        window.__streamingChunkInterval - (window.__openAIRawTranscription.sourceText.length * 10)
+                      );
+                      
                       // More lenient requirements for text processing
                       const { sourceText, translatedText } = window.__openAIRawTranscription;
-                      const hasReasonableContent = sourceText.trim().length > 10 && translatedText.trim().length > 5;
+                      const hasReasonableContent = sourceText.trim().length > 8 && translatedText.trim().length > 5;
                       
-                      // Process if enough time has passed OR we have substantial content
-                      if ((timeSinceLastChunk >= window.__streamingChunkInterval && hasReasonableContent) ||
-                          // Also process when we have substantial content, regardless of time passed
-                          (sourceText.length > 50 && translatedText.length > 20)) {
+                      // Process in any of these conditions:
+                      // 1. If enough time has passed with reasonable content
+                      // 2. If we have substantial content regardless of time
+                      // 3. If we detect a long pause in speech (for final segments)
+                      if ((timeSinceLastChunk >= dynamicInterval && hasReasonableContent) ||
+                          // Process when we have substantial content
+                          (sourceText.length > 40 && translatedText.length > 15) ||
+                          // Also process when we have reasonable content and it's been a long time
+                          (timeSinceLastChunk >= window.__streamingChunkInterval*1.5 && hasReasonableContent)) {
                         
                         // Process if different enough from last processed text
                         // Using a simpler approach - check the last 20 characters of source
