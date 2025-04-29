@@ -401,52 +401,77 @@ export function useSpeechSynthesis() {
         // Check if this is Arabic text 
         const textHasArabicScript = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(utterance.text);
         
-        // Special handling for Arabic text or other RTL languages
-        if (textHasArabicScript) {
-          // For Arabic text, if we get "interrupted" errors, try again with a different approach
-          if (event.error === "interrupted" || event.error === "canceled") {
-            console.log('Arabic speech interrupted or canceled, attempting recovery...');
-            
-            // Wait a brief moment then try again with a shorter segment or different rate
-            setTimeout(() => {
-              if (!window.speechSynthesis.speaking) {
-                try {
-                  // Create a new utterance with the same text but modified parameters
-                  const newUtterance = new SpeechSynthesisUtterance(utterance.text);
-                  
-                  // Try using the same voice if available
-                  if (utterance.voice) {
-                    newUtterance.voice = utterance.voice;
-                  }
-                  
-                  // Use the same language
-                  newUtterance.lang = utterance.lang;
-                  
-                  // Adjust rate slightly to make it more reliable
-                  newUtterance.rate = 0.9; // Slightly slower rate often helps with errors
-                  
-                  // Don't show errors for the retry attempt
-                  newUtterance.onerror = () => {
-                    setIsSpeaking(false);
-                    // Just silently fail on retry without showing error to user
-                  };
-                  
-                  newUtterance.onend = () => {
-                    setIsSpeaking(false);
-                  };
-                  
-                  // Try speaking again
-                  window.speechSynthesis.speak(newUtterance);
-                  console.log("Recovery attempt for Arabic speech");
-                } catch (e) {
-                  console.error("Arabic speech recovery attempt failed:", e);
-                  // Don't show error for recovery attempt
+        // For interrupted speech errors (with any language), use enhanced recovery
+        if (event.error === "interrupted" || event.error === "canceled") {
+          // Increment recovery count globally to track retries across attempts
+          const recoveryCount = ((window as any).__speechRecoveryCount || 0) + 1;
+          (window as any).__speechRecoveryCount = recoveryCount;
+          
+          console.log(`Speech interrupted/canceled (attempt #${recoveryCount}), attempting recovery...`);
+          
+          // Progressive backoff for retries
+          const recoveryDelay = Math.min(300 + (recoveryCount * 100), 800);
+          
+          // Cancel any pending speech to ensure a clean state
+          window.speechSynthesis.cancel();
+          
+          // Wait a brief moment then try again with modified parameters for better reliability
+          setTimeout(() => {
+            if (!window.speechSynthesis.speaking) {
+              try {
+                // If we've tried too many times, use a more aggressive approach
+                const isLongText = utterance.text.length > 100;
+                const shouldSplitText = recoveryCount > 1 && isLongText;
+                
+                // For multiple retries with long text, only speak the beginning
+                const textToSpeak = shouldSplitText 
+                  ? utterance.text.substring(0, 50) + "..." 
+                  : utterance.text;
+                
+                // Create a new utterance with the same text but modified parameters
+                const newUtterance = new SpeechSynthesisUtterance(textToSpeak);
+                
+                // Try using the same voice if available
+                if (utterance.voice) {
+                  newUtterance.voice = utterance.voice;
                 }
+                
+                // Use the same language
+                newUtterance.lang = utterance.lang;
+                
+                // Progressively slow down speech for better reliability in subsequent attempts
+                newUtterance.rate = Math.max(0.8, 1.0 - (recoveryCount * 0.1));
+                
+                // Don't show errors for the retry attempt
+                newUtterance.onerror = () => {
+                  setIsSpeaking(false);
+                  // After multiple recovery failures, reset the counter
+                  if (recoveryCount >= 3) {
+                    (window as any).__speechRecoveryCount = 0;
+                  }
+                };
+                
+                newUtterance.onend = () => {
+                  setIsSpeaking(false);
+                  // Reset recovery count on success
+                  (window as any).__speechRecoveryCount = 0;
+                };
+                
+                // Try speaking again with modified parameters
+                window.speechSynthesis.speak(newUtterance);
+                console.log(`Recovery attempt #${recoveryCount} with rate ${newUtterance.rate}, text length: ${textToSpeak.length}`);
+              } catch (e) {
+                console.error(`Speech recovery attempt #${recoveryCount} failed:`, e);
+                // Reset recovery count on exception
+                (window as any).__speechRecoveryCount = 0;
+                setIsSpeaking(false);
               }
-            }, 300); // Small delay before retry
-            
-            return; // Don't show error toasts for Arabic text when retrying
-          }
+            } else {
+              console.log('Speech already in progress, skipping recovery attempt');
+            }
+          }, recoveryDelay);
+          
+          return; // Don't show error toasts when attempting recovery
         }
         
         // For non-Arabic text or non-interrupted errors, proceed with normal error handling

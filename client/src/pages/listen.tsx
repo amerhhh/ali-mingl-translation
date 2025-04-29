@@ -126,6 +126,11 @@ const turnOffMicrophone = () => {
   // Check if microphone is active
   const isMicrophoneActive = window.__speechInputTracking?.isListening;
   
+  // Clear the played translation registry when turning off the mic
+  // This prevents stale entries when the user starts a new session
+  console.log('Resetting speech translation tracking on language/mode change');
+  (window as any).__listenModePlayedTranslations = {};
+  
   // Get microphone element to trigger a click if it's active
   const microphoneButton = document.querySelector('.rounded-full');
   
