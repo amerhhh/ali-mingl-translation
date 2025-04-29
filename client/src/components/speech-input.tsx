@@ -839,7 +839,24 @@ export function SpeechInput({
               }
             } else {
               console.log(`Starting WebSpeech recognition (attempt ${retryCount + 1}/${maxRetries})`);
-              // WebSpeech returns boolean directly
+              
+              // Initialize streaming functionality for WebSpeech
+              // This enables processing transcript in small chunks
+              if (window) {
+                console.log('Initializing WebSpeech streaming functionality');
+                
+                // Enable streaming by default for better user experience
+                window.__webSpeechStreamingEnabled = true;
+                
+                // Initialize timestamps and intervals
+                window.__webSpeechLastStreamingChunkTime = Date.now();
+                window.__webSpeechStreamingChunkInterval = 2000; // Default 2 seconds between chunks
+                window.__webSpeechStreamingLastProcessedText = "";
+                window.__webSpeechStreamingProcessingChunk = false;
+                window.__webSpeechStreamingLastChunkTime = Date.now();
+              }
+              
+              // Start WebSpeech recognition with streaming enabled
               success = startListeningWebSpeech();
               
               if (!success && retryCount === maxRetries - 1) {
