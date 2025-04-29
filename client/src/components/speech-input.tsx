@@ -755,14 +755,30 @@ export function SpeechInput({
     const now = Date.now();
     const lastToggleTime = (window as any).__lastToggleTime || 0;
     
+    // Track when the microphone button was last toggled (for global tracking)
+    if (window.__speechInputTracking) {
+      window.__speechInputTracking.lastToggleTime = now;
+    } else {
+      window.__speechInputTracking = {
+        isListening: false,
+        currentLanguage: language || 'en',
+        usingOpenAI: useOpenAI,
+        lastToggleTime: now,
+        preventLanguageEffectTrigger: false
+      };
+    }
+    
     // For manual clicks (not programmatic), use a shorter debounce period to improve responsiveness
     const isManualClick = new Error().stack?.includes('HTMLUnknownElement.callCallback');
-    const debounceTime = isManualClick ? 500 : 1500;
+    const debounceTime = isManualClick ? 300 : 1000; // Faster response times
     
     if (now - lastToggleTime < debounceTime) {
       console.log(`Ignoring rapid toggle request (${now - lastToggleTime}ms since last toggle)`);
       return;
     }
+    
+    // Enhanced error handling and logs
+    console.log(`Starting microphone ${isListening ? 'OFF' : 'ON'} - using ${useOpenAI ? 'OpenAI' : 'WebSpeech'} API`);
     
     // Update the last toggle time immediately to prevent race conditions
     (window as any).__lastToggleTime = now;
