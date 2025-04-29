@@ -617,14 +617,197 @@ export default function Listen() {
     };
   }, [targetLang, addDebugLog]);
   
-  // Global registry of played translations to prevent duplicates
-  const playedTranslationRegistry = useRef<{[key: string]: boolean}>({});
+  // Message queue system for sequential, uninterrupted playback
+  const messageQueue = useRef<{
+    messages: {
+      text: string;
+      lang: LanguageCode;
+      timestamp: number;
+      played: boolean;
+      id: string; // Unique ID for tracking
+    }[];
+    isPlaying: boolean;
+    lastPlayedTimestamp: number;
+  }>({
+    messages: [],
+    isPlaying: false,
+    lastPlayedTimestamp: 0,
+  });
   
-  // Set up effect to play latest messages automatically
+  // Process the message queue in sequence
+  const processMessageQueue = useCallback(() => {
+    const queue = messageQueue.current;
+    
+    // If already playing or queue is empty, do nothing
+    if (queue.isPlaying || queue.messages.length === 0) {
+      return;
+    }
+    
+    // Find the first unplayed message
+    const nextMessageIndex = queue.messages.findIndex(m => !m.played);
+    if (nextMessageIndex === -1) {
+      // All messages have been played, clear the queue
+      queue.messages = [];
+      return;
+    }
+    
+    // Mark as playing
+    queue.isPlaying = true;
+    
+    // Get the next message
+    const nextMessage = queue.messages[nextMessageIndex];
+    
+    // Play the message
+    console.log(`Message Queue: Playing message ${nextMessageIndex + 1}/${queue.messages.length}:`, nextMessage.text.substring(0, 30) + "...");
+    
+    // Set a flag to force the next utterance to play, regardless of language detection
+    (window as any).__forcePlayNextUtterance = true;
+    
+    // We need to force cancel any existing speech synthesis to ensure this plays
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    
+    // Function to mark message as played and process next
+    const onMessagePlayed = () => {
+      // Mark this message as played
+      if (queue.messages[nextMessageIndex]) {
+        queue.messages[nextMessageIndex].played = true;
+      }
+      
+      // Reset playing flag
+      queue.isPlaying = false;
+      
+      // Update last played timestamp
+      queue.lastPlayedTimestamp = Date.now();
+      
+      // Reset force play flag
+      (window as any).__forcePlayNextUtterance = false;
+      
+      // Process next message after a short delay for better voice naturalness
+      setTimeout(() => {
+        processMessageQueue();
+      }, 300);
+    };
+    
+    // Save the original speak behavior
+    const originalSpeak = speak;
+    
+    // Function to detect when speech has completed 
+    const detectSpeechCompletion = () => {
+      // Create a timeout based on text length (roughly 10-15 chars per second)
+      // Add a base time and limit maximum duration
+      const estimatedDuration = Math.min(
+        10000, // Max 10 seconds
+        700 + nextMessage.text.length * 70 // Base time + character estimate
+      );
+      
+      console.log(`Message Queue: Setting completion timeout for ${estimatedDuration}ms`);
+      
+      // Set timeout to detect speech completion
+      setTimeout(() => {
+        if (queue.isPlaying && queue.messages[nextMessageIndex] && !queue.messages[nextMessageIndex].played) {
+          console.log(`Message Queue: Speech completion detected by timeout`);
+          onMessagePlayed();
+        }
+      }, estimatedDuration);
+    };
+    
+    // Actually speak the text
+    speak(nextMessage.text, getLanguageCode(nextMessage.lang));
+    
+    // Start the detection timeout
+    detectSpeechCompletion();
+    
+  }, [speak]);
+  
+  // Override the speech synthesis speak method to track utterance completion
+  useEffect(() => {
+    if (window.speechSynthesis) {
+      // Store original speak method if not already stored
+      if (!(window.speechSynthesis as any).__originalSpeak) {
+        (window.speechSynthesis as any).__originalSpeak = window.speechSynthesis.speak;
+      }
+      
+      // Override the speak method
+      window.speechSynthesis.speak = function(utterance: SpeechSynthesisUtterance) {
+        // Add utterance end event listener
+        const originalOnEnd = utterance.onend;
+        utterance.onend = function(event) {
+          // Call original handler if it exists
+          if (originalOnEnd) {
+            originalOnEnd.call(this, event);
+          }
+          
+          // Mark the current message in queue as played
+          const queue = messageQueue.current;
+          if (queue.isPlaying) {
+            console.log(`Speech synthesis utterance completed event fired`);
+            // Find the first unplayed message
+            const nextMessageIndex = queue.messages.findIndex(m => !m.played);
+            if (nextMessageIndex !== -1) {
+              // Mark as played
+              queue.messages[nextMessageIndex].played = true;
+              // Update last played timestamp
+              queue.lastPlayedTimestamp = Date.now();
+              // Reset playing flag
+              queue.isPlaying = false;
+              
+              // Process next message after a short delay
+              setTimeout(() => {
+                processMessageQueue();
+              }, 300);
+            }
+          }
+        };
+        
+        // Add error handling
+        const originalOnError = utterance.onerror;
+        utterance.onerror = function(event) {
+          // Call original handler if it exists
+          if (originalOnError) {
+            originalOnError.call(this, event);
+          }
+          
+          console.log(`Speech synthesis error:`, event);
+          
+          // Continue the queue even on error
+          const queue = messageQueue.current;
+          if (queue.isPlaying) {
+            // Find the first unplayed message
+            const nextMessageIndex = queue.messages.findIndex(m => !m.played);
+            if (nextMessageIndex !== -1) {
+              // Mark as played
+              queue.messages[nextMessageIndex].played = true;
+              // Reset playing flag
+              queue.isPlaying = false;
+              
+              // Process next message after a short delay
+              setTimeout(() => {
+                processMessageQueue();
+              }, 300);
+            }
+          }
+        };
+        
+        // Call the original speak method
+        (window.speechSynthesis as any).__originalSpeak.call(window.speechSynthesis, utterance);
+      };
+    }
+    
+    // Cleanup
+    return () => {
+      if (window.speechSynthesis && (window.speechSynthesis as any).__originalSpeak) {
+        window.speechSynthesis.speak = (window.speechSynthesis as any).__originalSpeak;
+      }
+    };
+  }, []);
+  
+  // Set up effect to add latest messages to the queue
   useEffect(() => {
     const latestMessage = messages[messages.length - 1];
     if (isInitialized && latestMessage && speakerEnabled) {
-      console.log("Listen page: New message detected, checking for playback:", latestMessage);
+      console.log("Listen page: New message detected, checking for queue:", latestMessage);
       
       // Check if the message was created after the session started
       const messageTime = new Date(latestMessage.timestamp).getTime();
@@ -632,133 +815,86 @@ export default function Listen() {
       const sessionStartFormatted = new Date(sessionStartTime.current).toISOString();
       
       if (messageTime < sessionStartTime.current) {
-        console.log(`Listen page: Skipping message from previous session/different mode:
+        console.log(`Listen page: Skipping message from previous session:
         - Message timestamp: ${messageTimeFormatted}
         - Session started: ${sessionStartFormatted}
-        - Message source: ${latestMessage.sourceLang}, target: ${latestMessage.targetLang}
         - Message text: "${latestMessage.translatedText.substring(0, 30)}..."`);
         return;
       }
       
-      console.log(`Listen page: Processing new message created in current session:
-      - Message timestamp: ${messageTimeFormatted}
-      - Session started: ${sessionStartFormatted}
-      - Message age: ${Math.floor((Date.now() - messageTime) / 1000)}s ago`);
-      
-      // Enable auto-playing of messages in Listen mode
-      // In Listen mode, always play the target language translation
+      // In Listen mode, only play the target language translation
       if (latestMessage.targetLang === targetLang) {
-        // Before playing any new message, cancel any ongoing speech
-        if (window.speechSynthesis) {
-          window.speechSynthesis.cancel();
+        // Clean the text
+        const filteredText = latestMessage.translatedText
+          .replace(/translate them/gi, "")
+          .replace(/translation:/gi, "")
+          .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+          .trim();
+        
+        // Skip empty messages
+        if (!filteredText || filteredText === "..." || filteredText === "") {
+          console.log("Listen page: Skipping empty or placeholder message");
+          return;
         }
         
-        // Use a slight delay to ensure the DOM has updated
-        setTimeout(() => {
-          // Check if we're using webspeech (if it's not OpenAI)
-          const usingWebSpeech = !(latestMessage.isOpenAI === true);
-          
-          // Check if the text contains any special phrases we want to filter out
-          const filteredText = latestMessage.translatedText
-            .replace(/translate them/gi, "")
-            .replace(/translation:/gi, "")
-            .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
-            .trim();
-          
-          // Skip if the text is empty or just contains placeholder text after filtering
-          if (!filteredText || filteredText === "..." || filteredText === "") {
-            console.log("Listen page: Skipping empty or placeholder message");
-            return;
-          }
-          
-          // For WebSpeech streaming, we need to check if this message is a "final" version of something
-          // that we've already played in chunks. We'll use a combination of timestamp and content matching
-          if (usingWebSpeech) {
-            // Get the current registry of played translations from global state
-            const currentRegistry = (window as any).__listenModePlayedTranslations || {};
-            
-            // Create a fingerprint for this translation (first 15 chars for partial matching)
-            const translationPrefix = filteredText.substring(0, 15);
-            
-            // Check if we have a record of playing something with this prefix
-            // This catches cases where the final translation is just a completed version of already played chunks
-            const hasPlayedSimilar = Object.keys(currentRegistry).some(key => {
-              // If this exact message or a substantial part of it has been played
-              return key === filteredText || 
-                    // If this message contains a prefix we've already played
-                    (key.length >= 15 && filteredText.includes(key.substring(0, 15))) ||
-                    // If a message we've played contains this message's prefix
-                    (translationPrefix.length >= 10 && key.includes(translationPrefix));
-            });
-            
-            // If we've played something similar recently, skip playing this message
-            if (hasPlayedSimilar) {
-              console.log("Listen page: Skipping already played WebSpeech translation:", filteredText.substring(0, 30) + "...");
-              return;
-            }
-            
-            // Mark this translation as played to prevent future duplicates using global registry
-            // Update the registry with this new translation
-            (window as any).__listenModePlayedTranslations = { ...currentRegistry, [filteredText]: true };
-            
-            // Log that we're playing this as a new translation
-            console.log("Listen page: Playing NEW WebSpeech message translation");
-          }
-          
-          // Set a flag to force the next utterance to play, regardless of language detection
-          (window as any).__forcePlayNextUtterance = true;
-          console.log("Listen page: Setting force play flag for next utterance");
-          
-          // For OpenAI mode with RTL source languages (like Arabic), we need extra handling
-          // Check if this is an Arabic or other RTL message based on the translatedText
-          // This works in either direction as we'll check both fields
-          const isRTLSource = 
-            /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(filteredText) || 
-            /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(latestMessage.text || '');
-          const isOpenAIMessage = latestMessage.isOpenAI === true;
-          
-          if (isRTLSource && isOpenAIMessage) {
-            console.log("Listen page: Detected RTL source language with OpenAI, using special handling");
-            // When source is RTL, ensure we really cancel any playback of source language
-            if (window.speechSynthesis) {
-              window.speechSynthesis.cancel();
-            }
-            // Force our target language playback with a slightly longer delay
-            setTimeout(() => {
-              handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
-              // Reset force flag after another small delay
-              setTimeout(() => {
-                (window as any).__forcePlayNextUtterance = false;
-              }, 100);
-            }, 300);
-          } else if (usingWebSpeech) {
-            // For WebSpeech mode, play the audio (we've already checked for duplicates above)
-            handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
-            // Reset force flag after a small delay
-            setTimeout(() => {
-              (window as any).__forcePlayNextUtterance = false;
-            }, 100);
-          } else {
-            // For other OpenAI mode messages
-            console.log("Listen page: OpenAI message detected, checking if it needs to be played");
-            // Get the timestamp from the message
-            const messageTime = new Date(latestMessage.timestamp).getTime();
-            // Get the current time
-            const currentTime = Date.now();
-            // If the message is recent (less than 3 seconds old), don't play it again as it was likely
-            // already played via the raw transcription handler
-            if (currentTime - messageTime > 3000) {
-              handlePlayTranslation(filteredText, latestMessage.targetLang as LanguageCode, true);
-            }
-            // Reset force flag after a small delay
-            setTimeout(() => {
-              (window as any).__forcePlayNextUtterance = false;
-            }, 100);
-          }
-        }, 150);
+        // Generate a unique ID for this message
+        const messageId = `${latestMessage.temp_user_uuid}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        
+        // Get the translation prefix for comparison
+        const translationPrefix = filteredText.substring(0, Math.min(20, filteredText.length));
+        
+        // Check for duplicates in the queue
+        const queue = messageQueue.current;
+        const isDuplicateInQueue = queue.messages.some(m => 
+          // Exact match
+          m.text === filteredText ||
+          // Contains prefix (for partial matches)
+          (m.text.length >= 20 && filteredText.includes(m.text.substring(0, 20))) ||
+          // Message prefix matches
+          (translationPrefix.length >= 15 && m.text.includes(translationPrefix))
+        );
+        
+        if (isDuplicateInQueue) {
+          console.log("Listen page: Skipping message already in queue:", filteredText.substring(0, 30) + "...");
+          return;
+        }
+        
+        // Check against global played registry 
+        const globalRegistry = (window as any).__listenModePlayedTranslations || {};
+        
+        // Check if we've played this exact message recently
+        if (globalRegistry[filteredText] === true) {
+          console.log("Listen page: Skipping recently played exact message:", filteredText.substring(0, 30) + "...");
+          return;
+        }
+        
+        // Add to global registry
+        (window as any).__listenModePlayedTranslations = {
+          ...globalRegistry,
+          [filteredText]: true
+        };
+        
+        // Check if this is an RTL language for special handling
+        const isRTLSource = 
+          /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(filteredText) || 
+          /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(latestMessage.text || '');
+        
+        // Add to queue
+        queue.messages.push({
+          text: filteredText,
+          lang: latestMessage.targetLang as LanguageCode,
+          timestamp: Date.now(),
+          played: false,
+          id: messageId
+        });
+        
+        console.log(`Message Queue: Added message to queue (${queue.messages.length} total):`, filteredText.substring(0, 30) + "...");
+        
+        // Process the queue
+        processMessageQueue();
       }
     }
-  }, [messages, speakerEnabled, isInitialized, targetLang]);
+  }, [messages, speakerEnabled, isInitialized, targetLang, processMessageQueue]);
 
   const copyRoomId = () => {
     if (currentRoomId) {

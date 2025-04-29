@@ -24,6 +24,8 @@ declare global {
     __webSpeechLastStreamingChunkTime: number;
     __webSpeechStreamingChunkInterval: number;
     __webSpeechStreamingLastProcessedText: string;
+    __webSpeechStreamingProcessingChunk: boolean;
+    __webSpeechStreamingLastChunkTime: number;
   }
 }
 
@@ -153,58 +155,76 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
         }
       }
       
-      // Even more aggressive streaming chunk processing for smooth real-time translation
+      // Enhanced streaming chunking with deterministic behavior and queue support
       if (window.__webSpeechStreamingEnabled) {
         const now = Date.now();
-        const timeSinceLastChunk = now - (window.__webSpeechLastStreamingChunkTime || 0);
         
-        // Further lowered text requirements for extremely responsive streaming
-        const totalContentLength = (finalText + ' ' + interimText).trim().length;
-        const hasSomeText = totalContentLength > 8; // Much lower threshold to ensure nothing is missed
-        const hasIntermediateText = totalContentLength > 20; 
-        const hasSubstantialText = totalContentLength > 40;
-        
-        // Multi-tiered processing approach:
-        // 1. For small amounts of text, wait at least 1.5 seconds between chunks
-        // 2. For moderate text, process every 1 second
-        // 3. For substantial text, process immediately with minimum 0.7 second gap
-        // 4. When we've accumulated enough interim text, process regardless of timing
-        if ((timeSinceLastChunk >= 1500 && hasSomeText) || 
-            (timeSinceLastChunk >= 1000 && hasIntermediateText) ||
-            (timeSinceLastChunk >= 700 && hasSubstantialText) || 
-            (interimText.length > 25)) {
-          
-          // Log diagnostic info to help track chunking behavior
-          console.log(`[WebSpeech Streaming] Processing chunk with ${finalText.length} final chars, ${interimText.length} interim chars after ${Math.round(timeSinceLastChunk/100)/10}s`);
-          
-          // Create temporary final text that includes both final and interim text
-          const combinedText = (finalText + ' ' + interimText).trim();
-          
-          console.log(`[WebSpeech Streaming] Processing chunk after ${timeSinceLastChunk}ms:`, {
-            finalTextLength: finalText.length,
-            interimTextLength: interimText.length,
-            combinedLength: combinedText.length,
-          });
-          
-          // Force a "chunk final" event by creating a shallow copy with isFinal:true
-          const streamingResult = {
-            finalText: combinedText,
-            interimText: '',
-            isFinal: true
-          };
-          
-          // Set the transcript result with our forced "chunk final" data
-          setTranscriptResult(streamingResult);
-          
-          // Update tracking variables
+        // Initialize streaming variables if not set
+        if (window.__webSpeechLastStreamingChunkTime === undefined) {
           window.__webSpeechLastStreamingChunkTime = now;
+          window.__webSpeechStreamingChunkInterval = 2000; // Default to 2 seconds between chunks
+          window.__webSpeechStreamingLastProcessedText = "";
+          window.__webSpeechStreamingProcessingChunk = false;
+          window.__webSpeechStreamingLastChunkTime = 0;
+        }
+        
+        const timeSinceLastChunk = now - window.__webSpeechLastStreamingChunkTime;
+        const combinedText = (finalText + ' ' + interimText).trim();
+        
+        // Skip if we're already processing a chunk to prevent overlaps
+        if (window.__webSpeechStreamingProcessingChunk) {
+          return;
+        }
+        
+        // Check if the text is long enough to process
+        // Progressive thresholds based on time since last chunk
+        // Longer intervals = lower threshold for processing
+        const timeBasedThreshold = Math.max(10, 30 - Math.floor(timeSinceLastChunk / 500));
+        const hasEnoughText = combinedText.length > timeBasedThreshold;
+        
+        // For regular chunks, ensure we wait at least 2.0-2.5 seconds between chunks
+        // or have a significant amount of text to process
+        const minDelay = window.__webSpeechStreamingChunkInterval || 2000;
+        const hasSignificantDelay = timeSinceLastChunk >= minDelay;
+        
+        // For very short chunks of text, we want to ensure the user has paused speaking
+        // Detect pauses by monitoring the time since the interimText last changed
+        const hasMinimalText = combinedText.length <= 25;
+        const hasLongText = combinedText.length >= 40;
+        
+        // Process when:
+        // 1. We have significant delay (2+ seconds) AND some text, OR
+        // 2. We have a long chunk of text (40+ chars) AND reasonable delay (1+ second)
+        if ((hasSignificantDelay && hasEnoughText && combinedText !== window.__webSpeechStreamingLastProcessedText) || 
+            (hasLongText && timeSinceLastChunk >= 1000)) {
           
-          // Don't set lastProcessedText to the full final text - this prevents future chunks
-          // from being blocked if they contain similar content
-          if (finalText.length > 0) {
-            // Only store the last portion of the text to allow overlapping content
-            const endIndex = Math.max(0, finalText.length - 20);
-            window.__webSpeechStreamingLastProcessedText = finalText.substring(endIndex);
+          // Mark that we're processing a chunk to prevent overlapping processing
+          window.__webSpeechStreamingProcessingChunk = true;
+          
+          try {
+            // Log diagnostic info to help track chunking behavior
+            console.log(`[WebSpeech Streaming] Processing chunk with ${finalText.length} final chars, ${interimText.length} interim chars after ${Math.round(timeSinceLastChunk/100)/10}s`);
+            
+            // Force a "chunk final" event by creating a copy with isFinal:true
+            const streamingResult = {
+              finalText: combinedText,
+              interimText: '',
+              isFinal: true
+            };
+            
+            // Set the transcript result with our forced "chunk final" data
+            setTranscriptResult(streamingResult);
+            
+            // Update last processed tracking
+            window.__webSpeechStreamingLastProcessedText = combinedText;
+            window.__webSpeechLastStreamingChunkTime = now;
+            window.__webSpeechStreamingLastChunkTime = now;
+          } finally {
+            // Ensure we always clear the processing flag, even if there's an error
+            // Use a small delay to prevent immediate reprocessing
+            setTimeout(() => {
+              window.__webSpeechStreamingProcessingChunk = false;
+            }, 300);
           }
           
           // Return early to avoid overwriting our streaming result
