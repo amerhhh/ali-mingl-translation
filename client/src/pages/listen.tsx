@@ -625,13 +625,23 @@ export default function Listen() {
       timestamp: number;
       played: boolean;
       id: string; // Unique ID for tracking
+      isRTL?: boolean; // Flag for right-to-left languages that need special handling
+      processingStartTime?: number; // Track when we started processing this message
     }[];
     isPlaying: boolean;
     lastPlayedTimestamp: number;
+    pendingPlayback: boolean; // Flag to indicate we're waiting for synthesis to start
+    streamingEnabled: boolean; // Flag to enable/disable streaming playback
+    lastStreamingTime: number; // Track when we last processed a streaming chunk
+    streamingInterval: number; // How frequently to process streaming chunks (ms)
   }>({
     messages: [],
     isPlaying: false,
     lastPlayedTimestamp: 0,
+    pendingPlayback: false,
+    streamingEnabled: true,
+    lastStreamingTime: 0,
+    streamingInterval: 2000 // Process chunks every 2 seconds by default
   });
   
   // Process the message queue in sequence
@@ -657,15 +667,31 @@ export default function Listen() {
     // Get the next message
     const nextMessage = queue.messages[nextMessageIndex];
     
+    // Mark when we started processing this message
+    nextMessage.processingStartTime = Date.now();
+    
     // Play the message
     console.log(`Message Queue: Playing message ${nextMessageIndex + 1}/${queue.messages.length}:`, nextMessage.text.substring(0, 30) + "...");
     
     // Set a flag to force the next utterance to play, regardless of language detection
     (window as any).__forcePlayNextUtterance = true;
     
+    // Mark as playing - prevent duplicate play operations
+    queue.pendingPlayback = true;
+    
     // We need to force cancel any existing speech synthesis to ensure this plays
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
+    }
+    
+    // Special handling for RTL languages which often have issues with speech synthesis
+    if (nextMessage.isRTL) {
+      console.log("Message Queue: Using special RTL handling for this message");
+      
+      // For RTL languages (like Arabic), we need extra time between cancel and new speech
+      setTimeout(() => {
+        window.speechSynthesis.cancel(); // Double-cancel for extra reliability
+      }, 50);
     }
     
     // Function to mark message as played and process next
@@ -859,19 +885,53 @@ export default function Listen() {
           return;
         }
         
-        // Check against global played registry 
+        // Check against global played registry with timestamps for better deduplication
         const globalRegistry = (window as any).__listenModePlayedTranslations || {};
+        const now = Date.now();
+        const deduplicationWindow = 3000; // 3 seconds window for non-RTL languages
         
         // Check if we've played this exact message recently
-        if (globalRegistry[filteredText] === true) {
+        if (globalRegistry[filteredText] && (now - globalRegistry[filteredText]) < deduplicationWindow) {
           console.log("Listen page: Skipping recently played exact message:", filteredText.substring(0, 30) + "...");
           return;
         }
         
-        // Add to global registry
+        // For partial matches, use a shorter similarity check
+        const partialMatchExists = Object.keys(globalRegistry).some(key => {
+          // Only consider recent messages within deduplication window
+          if ((now - globalRegistry[key]) >= deduplicationWindow) {
+            return false;
+          }
+          
+          // Check for significant prefix overlap
+          if (key.length > 15 && filteredText.length > 15) {
+            const keyPrefix = key.substring(0, 15);
+            const textPrefix = filteredText.substring(0, 15);
+            
+            // If prefixes are very similar, consider it a duplicate
+            const isSimilarPrefix = keyPrefix.includes(textPrefix) || textPrefix.includes(keyPrefix);
+            
+            if (isSimilarPrefix) {
+              console.log("Listen page: Found similar prefix match:", {
+                existing: keyPrefix,
+                new: textPrefix
+              });
+              return true;
+            }
+          }
+          
+          return false;
+        });
+        
+        if (partialMatchExists) {
+          console.log("Listen page: Skipping message with similar prefix:", filteredText.substring(0, 30) + "...");
+          return;
+        }
+        
+        // Add to global registry with timestamp
         (window as any).__listenModePlayedTranslations = {
           ...globalRegistry,
-          [filteredText]: true
+          [filteredText]: now // Store timestamp instead of boolean
         };
         
         // Check if this is an RTL language for special handling
@@ -879,13 +939,15 @@ export default function Listen() {
           /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(filteredText) || 
           /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(latestMessage.text || '');
         
-        // Add to queue
+        // Add to queue with RTL flag for special handling
         queue.messages.push({
           text: filteredText,
           lang: latestMessage.targetLang as LanguageCode,
           timestamp: Date.now(),
           played: false,
-          id: messageId
+          id: messageId,
+          isRTL: isRTLSource,
+          processingStartTime: undefined // Will be set when we start processing
         });
         
         console.log(`Message Queue: Added message to queue (${queue.messages.length} total):`, filteredText.substring(0, 30) + "...");
