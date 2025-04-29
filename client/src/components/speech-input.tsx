@@ -289,6 +289,29 @@ export function SpeechInput({
     if (storedMicId) setSelectedMicId(storedMicId);
     if (storedSpeakerId) setSelectedSpeakerId(storedSpeakerId);
     if (storedUseOpenAI !== null) setUseOpenAI(storedUseOpenAI === 'true');
+    
+    // Initialize streaming configuration for WebSpeech API
+    const isListenPage = window.location.pathname.includes('/listen');
+    if (isListenPage) {
+      // In Listen mode, enable and configure the streaming system
+      console.log("Setting up WebSpeech streaming for Listen mode");
+      
+      // Global variables for the streaming system
+      (window as any).__webSpeechStreamingEnabled = true;
+      (window as any).__webSpeechLastStreamingChunkTime = Date.now();
+      (window as any).__webSpeechStreamingChunkInterval = 2000; // Process every 2 seconds by default
+      (window as any).__webSpeechStreamingLastProcessedText = '';
+      (window as any).__webSpeechStreamingProcessingChunk = false;
+      (window as any).__webSpeechStreamingLastChunkTime = 0;
+      
+      // Initialize message queue system
+      if (!(window as any).__listenModePlayedTranslations) {
+        (window as any).__listenModePlayedTranslations = {};
+      }
+    } else {
+      // Disable streaming in Chat mode - we want complete messages
+      (window as any).__webSpeechStreamingEnabled = false;
+    }
   }, []);
 
   // Save device preferences
