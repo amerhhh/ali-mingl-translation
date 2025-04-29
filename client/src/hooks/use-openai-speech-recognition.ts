@@ -31,6 +31,69 @@ declare global {
   }
 }
 
+// Utility function to extract room ID from URL
+function extractRoomId(): string {
+  let roomId = 'unknown';
+  try {
+    const pathParts = window.location.pathname.split('/');
+    const listenIndex = pathParts.indexOf('listen');
+    if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+      roomId = `listen_${pathParts[listenIndex + 1]}`;
+    }
+  } catch (e) {
+    console.error("[OpenAI WebRTC] Error extracting room ID:", e);
+  }
+  return roomId;
+}
+
+// Helper function to send messages to the server
+function sendToServer(sourceText: string, translatedText: string, roomId: string = 'unknown'): void {
+  try {
+    // Ensure we have text to send
+    if (!sourceText || !translatedText) {
+      console.warn('[OpenAI WebRTC] Empty text, not sending to server');
+      return;
+    }
+    
+    // Get the socket to use for sending messages
+    let socket = (window as any).__chatWebSocket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      // Try to get the WebSocket from the window object
+      socket = (window as any).__minglWebSocket;
+    }
+    
+    // If no socket is available, log an error and return
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      console.error('[OpenAI WebRTC] No WebSocket connection available for sending messages');
+      return;
+    }
+    
+    // Create the message object
+    const message = {
+      type: 'chat',
+      text: sourceText,
+      translatedText: translatedText,
+      sourceLang: 'en',
+      targetLang: 'ar', // This will be overridden by the server based on the room
+      voiceType: 'enhanced',
+      roomId: roomId,
+      temp_user_uuid: (window as any).__temp_user_uuid || (window as any).__userId || '',
+      user_emoji: (window as any).__user_emoji || (window as any).__userEmoji || '🎪',
+      timestamp: new Date().toISOString(),
+      isOpenAI: true
+    };
+    
+    // Send the message to the server
+    socket.send(JSON.stringify(message));
+    console.log(`[OpenAI WebRTC] Message sent to server for room ${roomId}:`, {
+      sourceLength: sourceText.length,
+      translationLength: translatedText.length
+    });
+  } catch (error) {
+    console.error('[OpenAI WebRTC] Error sending message to server:', error);
+  }
+}
+
 interface TranscriptResult {
   finalText: string;
   interimText: string;
