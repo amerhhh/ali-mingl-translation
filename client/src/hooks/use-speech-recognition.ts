@@ -153,19 +153,29 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
         }
       }
       
-      // Enhanced streaming chunk processing - more aggressive for better UX
+      // Even more aggressive streaming chunk processing for smooth real-time translation
       if (window.__webSpeechStreamingEnabled) {
         const now = Date.now();
         const timeSinceLastChunk = now - (window.__webSpeechLastStreamingChunkTime || 0);
         
-        // More lenient text requirements - process even with less text
+        // Further lowered text requirements for extremely responsive streaming
         const totalContentLength = (finalText + ' ' + interimText).trim().length;
-        const hasAnyReasonableText = totalContentLength > 15; // Lower threshold for content
+        const hasSomeText = totalContentLength > 8; // Much lower threshold to ensure nothing is missed
+        const hasIntermediateText = totalContentLength > 20; 
+        const hasSubstantialText = totalContentLength > 40;
         
-        // Process much more frequently when we have at least some text
-        if ((timeSinceLastChunk >= window.__webSpeechStreamingChunkInterval && hasAnyReasonableText) || 
-            // Also process when we have substantial interim results, regardless of time
-            (interimText.length > 30)) {
+        // Multi-tiered processing approach:
+        // 1. For small amounts of text, wait at least 1.5 seconds between chunks
+        // 2. For moderate text, process every 1 second
+        // 3. For substantial text, process immediately with minimum 0.7 second gap
+        // 4. When we've accumulated enough interim text, process regardless of timing
+        if ((timeSinceLastChunk >= 1500 && hasSomeText) || 
+            (timeSinceLastChunk >= 1000 && hasIntermediateText) ||
+            (timeSinceLastChunk >= 700 && hasSubstantialText) || 
+            (interimText.length > 25)) {
+          
+          // Log diagnostic info to help track chunking behavior
+          console.log(`[WebSpeech Streaming] Processing chunk with ${finalText.length} final chars, ${interimText.length} interim chars after ${Math.round(timeSinceLastChunk/100)/10}s`);
           
           // Create temporary final text that includes both final and interim text
           const combinedText = (finalText + ' ' + interimText).trim();
@@ -335,12 +345,22 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
       (window as any).__webSpeechStartTime = now;
       (window as any).__webSpeechActive = true;
       
-      // Initialize streaming properties
+      // Initialize streaming properties with more aggressive settings
       const isListenPage = window.location.pathname.includes('/listen');
       window.__webSpeechStreamingEnabled = isListenPage; // Only enable streaming in listen mode
       window.__webSpeechLastStreamingChunkTime = 0;
-      window.__webSpeechStreamingChunkInterval = 2000; // Process every 2 seconds in listen mode
+      window.__webSpeechStreamingChunkInterval = 1000; // Process every 1 second in listen mode for baseline
       window.__webSpeechStreamingLastProcessedText = '';
+      
+      // Create a global tracking object for streaming performance monitoring
+      if (!(window as any).__speechStreamingStats) {
+        (window as any).__speechStreamingStats = {
+          totalChunks: 0,
+          duplicatesDetected: 0,
+          avgChunkSize: 0,
+          lastChunkTime: 0
+        };
+      }
       
       console.log(`WebSpeech starting at ${now}, marked as active globally`);
       console.log(`WebSpeech streaming ${window.__webSpeechStreamingEnabled ? 'enabled' : 'disabled'}, chunk interval: ${window.__webSpeechStreamingChunkInterval}ms`);

@@ -181,24 +181,72 @@ export function useSpeechSynthesis() {
             }
             
             chunkUtterance.lang = 'ar-SA';
-            chunkUtterance.rate = 0.95; // Slightly slower for better reliability
+            chunkUtterance.rate = 0.92; // Even slower for better reliability
+            chunkUtterance.pitch = 1.0; // Default pitch
             
-            // When this chunk ends, play the next one
-            chunkUtterance.onend = () => {
-              speakNextChunk(index + 1);
+            // Enhanced robustness for chunked speech
+            let chunkStarted = false;
+            let chunkCancelled = false;
+            
+            // Add a flag to track start of speech
+            chunkUtterance.onstart = () => {
+              chunkStarted = true;
+              console.log(`Arabic chunk ${index} started speaking`);
             };
             
-            // If there's an error with this chunk, try to continue with the next one
+            // When this chunk ends successfully, play the next one
+            chunkUtterance.onend = () => {
+              if (chunkStarted && !chunkCancelled) {
+                console.log(`Arabic chunk ${index} completed normally`);
+                setTimeout(() => {
+                  speakNextChunk(index + 1);
+                }, 150); // Small gap between chunks for better clarity
+              }
+            };
+            
+            // Handle errors more robustly
             chunkUtterance.onerror = (event) => {
-              console.error(`Error with Arabic chunk ${index}:`, event);
-              // Try to continue with the next chunk after a brief pause
+              const errorType = event.error || 'unknown';
+              
+              // Mark chunk as cancelled to prevent multiple attempts
+              chunkCancelled = true;
+              
+              console.error(`Error with Arabic chunk ${index} (${errorType}):`, event);
+              
+              // For interruption errors, try to restart speech synthesis
+              if (errorType === 'interrupted' || errorType === 'canceled') {
+                console.log(`Arabic speech interrupted, advancing to next chunk`);
+                // Clear any pending speech
+                window.speechSynthesis.cancel();
+                
+                // Wait a moment, then continue with next chunk
+                setTimeout(() => {
+                  speakNextChunk(index + 1);
+                }, 300);
+              } else {
+                // For other errors, just try the next chunk after a longer pause
+                setTimeout(() => {
+                  speakNextChunk(index + 1);
+                }, 500);
+              }
+            };
+            
+            // Play this chunk with safeguards
+            try {
+              // First make sure synthesis service is not busy
+              window.speechSynthesis.cancel();
+              
+              // Small delay before starting new speech
+              setTimeout(() => {
+                window.speechSynthesis.speak(chunkUtterance);
+              }, 100);
+            } catch (err) {
+              console.error(`Exception when trying to speak Arabic chunk ${index}:`, err);
+              // Try to recover by moving to next chunk
               setTimeout(() => {
                 speakNextChunk(index + 1);
-              }, 300);
-            };
-            
-            // Play this chunk
-            window.speechSynthesis.speak(chunkUtterance);
+              }, 400);
+            }
           };
           
           // Start speaking the first chunk

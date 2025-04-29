@@ -1,0 +1,33 @@
+Console.js:61 Speech synthesis error: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+utterance.onerror @ use-speech-synthesis.ts:345Understand this error
+Console.js:61 Error with Arabic chunk 0: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+chunkUtterance.onerror @ use-speech-synthesis.ts:193Understand this error
+Console.js:61 Error with Arabic chunk 0: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+chunkUtterance.onerror @ use-speech-synthesis.ts:193Understand this error
+Console.js:61 Error with Arabic chunk 1: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+chunkUtterance.onerror @ use-speech-synthesis.ts:193Understand this error
+Console.js:61 Error with Arabic chunk 1: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+chunkUtterance.onerror @ use-speech-synthesis.ts:193Understand this error
+Console.js:61 Speech synthesis error: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+utterance.onerror @ use-speech-synthesis.ts:345Understand this error
+Console.js:61 Speech synthesis error: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+utterance.onerror @ use-speech-synthesis.ts:345Understand this error
+Console.js:61 Error with Arabic chunk 0: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+chunkUtterance.onerror @ use-speech-synthesis.ts:193Understand this error
+Console.js:61 Speech synthesis error: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+utterance.onerror @ use-speech-synthesis.ts:345Understand this error
+Console.js:61 Error with Arabic chunk 1: SpeechSynthesisErrorEvent {isTrusted: true, error: 'interrupted', utterance: SpeechSynthesisUtterance, charIndex: 0, charLength: 0, …}
+Mt.forEach.n.<computed> @ Console.js:61
+chunkUtterance.onerror @ use-speech-synthesis.ts:193Understand this error
+Console.js:61 Speech recognition error: SpeechRecognitionErrorEvent {isTrusted: true, error: 'no-speech', message: '', type: 'error', target: SpeechRecognition, …}
+Mt.forEach.n.<computed> @ Console.js:61
+recognition.current.onerror @ use-speech-recognition.ts:214Understand this error

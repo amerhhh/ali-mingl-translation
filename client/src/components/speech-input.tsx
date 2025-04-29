@@ -555,109 +555,136 @@ export function SpeechInput({
     }
   }, [useOpenAI, onTranscriptChange]);
 
-  // Handle transcript updates
+  // Handle transcript updates with enhanced buffering for smoother experience
   useEffect(() => {
     // IMPORTANT: Only process transcript changes if we're actively listening
     // This prevents state changes from triggering unintentional stops
     if (!isListening) return;
     
+    // Get the current combined text (final + interim)
     const currentText = transcriptResult.finalText + (transcriptResult.interimText ? ' ' + transcriptResult.interimText : '');
-
-    if (currentText.trim() && currentText !== lastSentText.current) {
-      lastSentText.current = currentText;
+    
+    // Don't process empty or unchanged text
+    if (!currentText.trim() || currentText === lastSentText.current) {
+      return;
+    }
+    
+    // Check if we're in listen mode, where we need special handling
+    const isListenPage = window.location.pathname.includes('/listen');
+    
+    // For listen mode: check if this is a very minor update to avoid processing tiny changes
+    if (isListenPage && lastSentText.current && !transcriptResult.isFinal) {
+      // Only for incremental changes in interim text (not final)
+      const prevTextLength = lastSentText.current.length;
+      const currentTextLength = currentText.length;
       
-      // For WebSpeech, store the source text in window for matching with translations
-      if (!useOpenAI && transcriptResult.isFinal && transcriptResult.finalText) {
-        // Check if we're in listen mode
-        const isListenPage = window.location.pathname.includes('/listen');
+      // If the change is very small (< 5 characters) and we processed text recently (< 0.8 sec ago),
+      // hold off on processing this update to avoid too many small chunks
+      const isVerySmallChange = Math.abs(currentTextLength - prevTextLength) < 5;
+      const lastProcessTime = (window as any).__lastWebSpeechProcessTime || 0;
+      const isVeryRecentUpdate = (Date.now() - lastProcessTime) < 800;
+      
+      if (isVerySmallChange && isVeryRecentUpdate) {
+        // Skip this minor update - will catch it in a slightly larger chunk soon
+        return;
+      }
+    }
+    
+    // Update tracking variables
+    lastSentText.current = currentText;
+    (window as any).__lastWebSpeechProcessTime = Date.now();
+    
+    // For WebSpeech, store the source text in window for matching with translations
+    if (!useOpenAI && transcriptResult.isFinal && transcriptResult.finalText) {
+      // Check if we're in listen mode
+      const isListenPage = window.location.pathname.includes('/listen');
+      
+      // For listen mode, use persistent tracking to completely prevent duplication
+      if (isListenPage) {
+        // Create a message fingerprint
+        // Enhanced duplicate detection to prevent repetitive speech
+        // Create a more unique fingerprint that captures the essence of the message
+        let messageFingerprint = '';
+        const trimmedText = transcriptResult.finalText.trim();
         
-        // For listen mode, use persistent tracking to completely prevent duplication
-        if (isListenPage) {
-          // Create a message fingerprint
-          // Enhanced duplicate detection to prevent repetitive speech
-          // Create a more unique fingerprint that captures the essence of the message
-          let messageFingerprint = '';
-          const trimmedText = transcriptResult.finalText.trim();
-          
-          if (trimmedText.length > 30) {
-            // For longer text, create a more robust fingerprint from multiple parts of the text
-            const beginning = trimmedText.substring(0, 10);
-            const middle = trimmedText.substring(Math.floor(trimmedText.length / 2) - 5, Math.floor(trimmedText.length / 2) + 5);
-            const end = trimmedText.substring(trimmedText.length - 10);
-            messageFingerprint = `${beginning}...${middle}...${end}`;
-          } else {
-            // For shorter text, just use the entire text
-            messageFingerprint = trimmedText;
-          }
-          
-          // Use longer deduplication window to prevent repetition (60 seconds)
-          const deduplicationWindow = 60000;
-          const now = Date.now();
-          
-          // Global persistent storage for similar message tracking across component lifecycle
-          const processedFingerprints = (window as any).__listenModeFingerprints = (window as any).__listenModeFingerprints || {};
-          
-          // Check if we've processed this exact fingerprint recently
-          const matchingFingerprint = Object.keys(processedFingerprints).find(fp => {
-            // Check if the fingerprint is similar and was processed recently
-            const isSimilar = (
-              // Direct match
-              fp === messageFingerprint ||
-              // Or contains significant overlap (3+ word phrases)
-              (fp.length > 15 && messageFingerprint.length > 15 && 
-               (fp.includes(messageFingerprint.substring(0, 15)) || 
-                messageFingerprint.includes(fp.substring(0, 15))))
-            );
-            
-            // Only consider it a match if it's recent enough
-            return isSimilar && (now - processedFingerprints[fp] < deduplicationWindow);
-          });
-          
-          if (matchingFingerprint) {
-            console.log(`[WebSpeech] BLOCKING similar transcript in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
-            console.log(`[WebSpeech] Matched fingerprint: ${matchingFingerprint.substring(0, 30)}...`);
-            return;
-          }
-          
-          // Mark this fingerprint as processed with current timestamp
-          processedFingerprints[messageFingerprint] = now;
-          console.log(`[WebSpeech] Processing new transcript in listen mode: ${trimmedText.substring(0, 30)}...`);
-        }
-        
-        // Store the source text in the window to mimic OpenAI format
-        if (!window.__openAIRawTranscription) {
-          window.__openAIRawTranscription = {
-            sourceText: transcriptResult.finalText,
-            translatedText: '',
-            isComplete: false,
-            isSourceComplete: true // Mark source as complete for WebSpeech
-          };
+        if (trimmedText.length > 30) {
+          // For longer text, create a more robust fingerprint from multiple parts of the text
+          const beginning = trimmedText.substring(0, 10);
+          const middle = trimmedText.substring(Math.floor(trimmedText.length / 2) - 5, Math.floor(trimmedText.length / 2) + 5);
+          const end = trimmedText.substring(trimmedText.length - 10);
+          messageFingerprint = `${beginning}...${middle}...${end}`;
         } else {
-          window.__openAIRawTranscription.sourceText = transcriptResult.finalText;
-          window.__openAIRawTranscription.translatedText = '';
-          window.__openAIRawTranscription.isComplete = false;
-          window.__openAIRawTranscription.isSourceComplete = true; // Mark source as complete for WebSpeech
+          // For shorter text, just use the entire text
+          messageFingerprint = trimmedText;
         }
         
-        // Store the transcript for matching with translations
-        lastTranscriptSent.current = transcriptResult.finalText;
+        // Use longer deduplication window to prevent repetition (60 seconds)
+        const deduplicationWindow = 60000;
+        const now = Date.now();
         
-        // Log that we're storing the source text for WebSpeech translation
-        console.log("WebSpeech: Stored source text for translation matching:", transcriptResult.finalText);
+        // Global persistent storage for similar message tracking across component lifecycle
+        const processedFingerprints = (window as any).__listenModeFingerprints = (window as any).__listenModeFingerprints || {};
+        
+        // Check if we've processed this exact fingerprint recently
+        const matchingFingerprint = Object.keys(processedFingerprints).find(fp => {
+          // Check if the fingerprint is similar and was processed recently
+          const isSimilar = (
+            // Direct match
+            fp === messageFingerprint ||
+            // Or contains significant overlap (3+ word phrases)
+            (fp.length > 15 && messageFingerprint.length > 15 && 
+             (fp.includes(messageFingerprint.substring(0, 15)) || 
+              messageFingerprint.includes(fp.substring(0, 15))))
+          );
+          
+          // Only consider it a match if it's recent enough
+          return isSimilar && (now - processedFingerprints[fp] < deduplicationWindow);
+        });
+        
+        if (matchingFingerprint) {
+          console.log(`[WebSpeech] BLOCKING similar transcript in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
+          console.log(`[WebSpeech] Matched fingerprint: ${matchingFingerprint.substring(0, 30)}...`);
+          return;
+        }
+        
+        // Mark this fingerprint as processed with current timestamp
+        processedFingerprints[messageFingerprint] = now;
+        console.log(`[WebSpeech] Processing new transcript in listen mode: ${trimmedText.substring(0, 30)}...`);
       }
       
-      // Send to chat component - this works for both OpenAI and WebSpeech
-      onTranscriptChange(currentText, transcriptResult.isFinal);
-
-      // Reset transcript state after sending final text
-      if (transcriptResult.isFinal) {
-        if (useOpenAI) {
-          resetOpenAITranscript();
-        } else {
-          resetWebSpeechTranscript();
-        }
-        lastSentText.current = "";
+      // Store the source text in the window to mimic OpenAI format
+      if (!window.__openAIRawTranscription) {
+        window.__openAIRawTranscription = {
+          sourceText: transcriptResult.finalText,
+          translatedText: '',
+          isComplete: false,
+          isSourceComplete: true // Mark source as complete for WebSpeech
+        };
+      } else {
+        window.__openAIRawTranscription.sourceText = transcriptResult.finalText;
+        window.__openAIRawTranscription.translatedText = '';
+        window.__openAIRawTranscription.isComplete = false;
+        window.__openAIRawTranscription.isSourceComplete = true; // Mark source as complete for WebSpeech
       }
+      
+      // Store the transcript for matching with translations
+      lastTranscriptSent.current = transcriptResult.finalText;
+      
+      // Log that we're storing the source text for WebSpeech translation
+      console.log("WebSpeech: Stored source text for translation matching:", transcriptResult.finalText);
+    }
+    
+    // Send to chat component - this works for both OpenAI and WebSpeech
+    onTranscriptChange(currentText, transcriptResult.isFinal);
+
+    // Reset transcript state after sending final text
+    if (transcriptResult.isFinal) {
+      if (useOpenAI) {
+        resetOpenAITranscript();
+      } else {
+        resetWebSpeechTranscript();
+      }
+      lastSentText.current = "";
     }
   }, [transcriptResult, onTranscriptChange, resetWebSpeechTranscript, resetOpenAITranscript, useOpenAI, isListening]);
 
