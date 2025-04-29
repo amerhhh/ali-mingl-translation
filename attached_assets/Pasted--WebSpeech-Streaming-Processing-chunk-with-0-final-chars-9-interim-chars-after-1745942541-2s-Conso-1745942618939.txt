@@ -1,0 +1,230 @@
+[WebSpeech Streaming] Processing chunk with 0 final chars, 9 interim chars after 1745942541.2s
+Console.js:61 [WebSpeech Streaming] Processing chunk after 1745942541162ms: {finalTextLength: 0, interimTextLength: 9, combinedLength: 9}
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: hey hello...
+Console.js:61 WebSpeech: Stored source text for translation matching: hey hello
+Console.js:61 [Listen] First time handling this transcript in current time window: hey hello...
+Console.js:61 Attempting to send message: {text: 'hey hello...', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', userId: '1f3d6056-3639-4f5f-9b84-2d4075b56200', …}
+Console.js:61 Sending message through WebSocket: {type: 'chat', text: 'hey hello', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', …}
+Console.js:61 No OpenAI translation found for immediate playback
+Console.js:61 Received message: {type: 'chat', text: 'hey hello', translatedText: 'مرحبًا', sourceLang: 'en', targetLang: 'ar', …}
+Console.js:61 Adding new message to chat: {text: 'hey hello...', translatedText: 'مرحبًا...', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:21.961Z', …}
+Console.js:61 Received translation for WebSpeech message: مرحبًا
+Console.js:61 [WebSpeech] Processing message in listen mode with dedupKey
+Console.js:61 WEBSPEECH TRANSLATION RECEIVED: {sourceText: 'hey hello', translatedText: 'مرحبًا'}
+Console.js:61  WebSpeech Translation Status  Source text: hey hello Translation: مرحبًا Both will be displayed in chat with the Translation label
+Console.js:61 [WebSpeech] Processing translation in listen mode: "hey hello..." -> "مرحبًا..."
+Console.js:61 [Listen] BLOCKING duplicate transcript handler call: hey hello...
+Console.js:61 Listen page: New message detected, checking for playback: {text: 'hey hello', translatedText: 'مرحبًا', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:21.961Z', …}
+Console.js:61 Listen page: Processing new message created in current session:
+      - Message timestamp: 2025-04-29T16:02:21.961Z
+      - Session started: 2025-04-29T16:02:09.977Z
+      - Message age: 0s ago
+Console.js:61 Listen page: Playing NEW WebSpeech message translation
+Console.js:61 Listen page: Setting force play flag for next utterance
+Console.js:61 Listen page: PlayTranslation called: text="مرحبًا...", lang=ar, ignoreMainSpeaker=true
+Console.js:61 Listen page: Playing audio in target language: ar
+Console.js:61 Allowing audio playback in Listen mode for real-time translation
+Console.js:61 Speech check for auto-play: isChat=false, isOpenAI=undefined, isManual=true, playTargetEnabled=false
+Console.js:61 Manual playback requested - allowing audio regardless of other settings
+Console.js:61 Arabic text detected, using ar-SA language code
+Console.js:61 Available voices: (24) ['Microsoft David - English (United States) (en-US)', 'Microsoft Naayf - Arabic (Saudi) (ar-SA)', 'Microsoft Hoda - Arabic (Egypt) (ar-EG)', 'Microsoft Mark - English (United States) (en-US)', 'Microsoft Zira - English (United States) (en-US)', 'Google Deutsch (de-DE)', 'Google US English (en-US)', 'Google UK English Female (en-GB)', 'Google UK English Male (en-GB)', 'Google español (es-ES)', 'Google español de Estados Unidos (es-US)', 'Google français (fr-FR)', 'Google हिन्दी (hi-IN)', 'Google Bahasa Indonesia (id-ID)', 'Google italiano (it-IT)', 'Google 日本語 (ja-JP)', 'Google 한국의 (ko-KR)', 'Google Nederlands (nl-NL)', 'Google polski (pl-PL)', 'Google português do Brasil (pt-BR)', 'Google русский (ru-RU)', 'Google 普通话（中国大陆） (zh-CN)', 'Google 粤語（香港） (zh-HK)', 'Google 國語（臺灣） (zh-TW)']
+Console.js:61 Selected voice: Microsoft Naayf - Arabic (Saudi) for language: ar-SA
+Console.js:61 [DEBUG] Speech request - text: "مرحبًا..." lang: ar-sa
+Console.js:61 [DEBUG] 🔊 Force playing this utterance (unblocked by force flag)
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "مرحبًا..." (lang: ar-SA)
+Console.js:61 Speech started
+Console.js:61 [WebSpeech Streaming] Processing chunk with 0 final chars, 14 interim chars after 1.5s
+Console.js:61 [WebSpeech Streaming] Processing chunk after 1526ms: {finalTextLength: 0, interimTextLength: 14, combinedLength: 13}
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: Shoaib Ashraf...
+Console.js:61 WebSpeech: Stored source text for translation matching: Shoaib Ashraf
+Console.js:61 [Listen] First time handling this transcript in current time window: Shoaib Ashraf...
+Console.js:61 Attempting to send message: {text: 'Shoaib Ashraf...', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', userId: '1f3d6056-3639-4f5f-9b84-2d4075b56200', …}
+Console.js:61 Sending message through WebSocket: {type: 'chat', text: 'Shoaib Ashraf', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', …}
+Console.js:61 No OpenAI translation found for immediate playback
+Console.js:61 Received message: {type: 'chat', text: 'Shoaib Ashraf', translatedText: 'شعيب أشرف', sourceLang: 'en', targetLang: 'ar', …}
+Console.js:61 Adding new message to chat: {text: 'Shoaib Ashraf...', translatedText: 'شعيب أشرف...', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:23.421Z', …}
+Console.js:61 Received translation for WebSpeech message: شعيب أشرف
+Console.js:61 [WebSpeech] Processing message in listen mode with dedupKey
+Console.js:61 WEBSPEECH TRANSLATION RECEIVED: {sourceText: 'Shoaib Ashraf', translatedText: 'شعيب أشرف'}
+Console.js:61  WebSpeech Translation Status  Source text: Shoaib Ashraf Translation: شعيب أشرف Both will be displayed in chat with the Translation label
+Console.js:61 [WebSpeech] Processing translation in listen mode: "Shoaib Ashraf..." -> "شعيب أشرف..."
+Console.js:61 [Listen] BLOCKING duplicate transcript handler call: Shoaib Ashraf...
+Console.js:61 Listen page: New message detected, checking for playback: {text: 'Shoaib Ashraf', translatedText: 'شعيب أشرف', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:23.421Z', …}
+Console.js:61 Listen page: Processing new message created in current session:
+      - Message timestamp: 2025-04-29T16:02:23.421Z
+      - Session started: 2025-04-29T16:02:09.977Z
+      - Message age: 0s ago
+Console.js:61 Speech interrupted/canceled (attempt #1), attempting recovery...
+Console.js:61 Listen page: Playing NEW WebSpeech message translation
+Console.js:61 Listen page: Setting force play flag for next utterance
+Console.js:61 Listen page: PlayTranslation called: text="شعيب أشرف...", lang=ar, ignoreMainSpeaker=true
+Console.js:61 Listen page: Playing audio in target language: ar
+Console.js:61 Allowing audio playback in Listen mode for real-time translation
+Console.js:61 Speech check for auto-play: isChat=false, isOpenAI=undefined, isManual=true, playTargetEnabled=false
+Console.js:61 Manual playback requested - allowing audio regardless of other settings
+Console.js:61 Arabic text detected, using ar-SA language code
+Console.js:61 Available voices: (24) ['Microsoft David - English (United States) (en-US)', 'Microsoft Naayf - Arabic (Saudi) (ar-SA)', 'Microsoft Hoda - Arabic (Egypt) (ar-EG)', 'Microsoft Mark - English (United States) (en-US)', 'Microsoft Zira - English (United States) (en-US)', 'Google Deutsch (de-DE)', 'Google US English (en-US)', 'Google UK English Female (en-GB)', 'Google UK English Male (en-GB)', 'Google español (es-ES)', 'Google español de Estados Unidos (es-US)', 'Google français (fr-FR)', 'Google हिन्दी (hi-IN)', 'Google Bahasa Indonesia (id-ID)', 'Google italiano (it-IT)', 'Google 日本語 (ja-JP)', 'Google 한국의 (ko-KR)', 'Google Nederlands (nl-NL)', 'Google polski (pl-PL)', 'Google português do Brasil (pt-BR)', 'Google русский (ru-RU)', 'Google 普通话（中国大陆） (zh-CN)', 'Google 粤語（香港） (zh-HK)', 'Google 國語（臺灣） (zh-TW)']
+Console.js:61 Selected voice: Microsoft Naayf - Arabic (Saudi) for language: ar-SA
+Console.js:61 [DEBUG] Speech request - text: "شعيب أشرف..." lang: ar-sa
+Console.js:61 [DEBUG] 🔊 Force playing this utterance (unblocked by force flag)
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "شعيب أشرف..." (lang: ar-SA)
+Console.js:61 Speech started
+Console.js:61 Speech already in progress, skipping recovery attempt
+Console.js:61 [WebSpeech Streaming] Processing chunk with 0 final chars, 13 interim chars after 1.8s
+Console.js:61 [WebSpeech Streaming] Processing chunk after 1792ms: {finalTextLength: 0, interimTextLength: 13, combinedLength: 12}
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: bachelor and...
+Console.js:61 WebSpeech: Stored source text for translation matching: bachelor and
+Console.js:61 [Listen] First time handling this transcript in current time window: bachelor and...
+Console.js:61 Attempting to send message: {text: 'bachelor and...', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', userId: '1f3d6056-3639-4f5f-9b84-2d4075b56200', …}
+Console.js:61 Sending message through WebSocket: {type: 'chat', text: 'bachelor and', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', …}
+Console.js:61 No OpenAI translation found for immediate playback
+Console.js:61 Received message: {type: 'chat', text: 'bachelor and', translatedText: 'عزباء و', sourceLang: 'en', targetLang: 'ar', …}
+Console.js:61 Adding new message to chat: {text: 'bachelor and...', translatedText: 'عزباء و...', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:25.166Z', …}
+Console.js:61 Received translation for WebSpeech message: عزباء و
+Console.js:61 [WebSpeech] Processing message in listen mode with dedupKey
+Console.js:61 WEBSPEECH TRANSLATION RECEIVED: {sourceText: 'bachelor and', translatedText: 'عزباء و'}
+Console.js:61  WebSpeech Translation Status  Source text: bachelor and Translation: عزباء و Both will be displayed in chat with the Translation label
+Console.js:61 [WebSpeech] Processing translation in listen mode: "bachelor and..." -> "عزباء و..."
+Console.js:61 [Listen] BLOCKING duplicate transcript handler call: bachelor and...
+Console.js:61 Listen page: New message detected, checking for playback: {text: 'bachelor and', translatedText: 'عزباء و', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:25.166Z', …}
+Console.js:61 Listen page: Processing new message created in current session:
+      - Message timestamp: 2025-04-29T16:02:25.166Z
+      - Session started: 2025-04-29T16:02:09.977Z
+      - Message age: 0s ago
+Console.js:61 Speech interrupted/canceled (attempt #2), attempting recovery...
+Console.js:61 Listen page: Playing NEW WebSpeech message translation
+Console.js:61 Listen page: Setting force play flag for next utterance
+Console.js:61 Listen page: PlayTranslation called: text="عزباء و...", lang=ar, ignoreMainSpeaker=true
+Console.js:61 Listen page: Playing audio in target language: ar
+Console.js:61 Allowing audio playback in Listen mode for real-time translation
+Console.js:61 Speech check for auto-play: isChat=false, isOpenAI=undefined, isManual=true, playTargetEnabled=false
+Console.js:61 Manual playback requested - allowing audio regardless of other settings
+Console.js:61 Arabic text detected, using ar-SA language code
+Console.js:61 Available voices: (24) ['Microsoft David - English (United States) (en-US)', 'Microsoft Naayf - Arabic (Saudi) (ar-SA)', 'Microsoft Hoda - Arabic (Egypt) (ar-EG)', 'Microsoft Mark - English (United States) (en-US)', 'Microsoft Zira - English (United States) (en-US)', 'Google Deutsch (de-DE)', 'Google US English (en-US)', 'Google UK English Female (en-GB)', 'Google UK English Male (en-GB)', 'Google español (es-ES)', 'Google español de Estados Unidos (es-US)', 'Google français (fr-FR)', 'Google हिन्दी (hi-IN)', 'Google Bahasa Indonesia (id-ID)', 'Google italiano (it-IT)', 'Google 日本語 (ja-JP)', 'Google 한국의 (ko-KR)', 'Google Nederlands (nl-NL)', 'Google polski (pl-PL)', 'Google português do Brasil (pt-BR)', 'Google русский (ru-RU)', 'Google 普通话（中国大陆） (zh-CN)', 'Google 粤語（香港） (zh-HK)', 'Google 國語（臺灣） (zh-TW)']
+Console.js:61 Selected voice: Microsoft Naayf - Arabic (Saudi) for language: ar-SA
+Console.js:61 [DEBUG] Speech request - text: "عزباء و..." lang: ar-sa
+Console.js:61 [DEBUG] 🔊 Force playing this utterance (unblocked by force flag)
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "عزباء و..." (lang: ar-SA)
+Console.js:61 Speech started
+Console.js:61 Speech already in progress, skipping recovery attempt
+Console.js:61 [WebSpeech Streaming] Processing chunk with 0 final chars, 88 interim chars after 1.6s
+Console.js:61 [WebSpeech Streaming] Processing chunk after 1571ms: {finalTextLength: 0, interimTextLength: 88, combinedLength: 88}
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: hey hello my name is Shoaib As...
+Console.js:61 WebSpeech: Stored source text for translation matching: hey hello my name is Shoaib Ashraf and I have done my bachelor and computer science from
+Console.js:61 [Listen] First time handling this transcript in current time window: hey hello my name is Shoaib As...
+Console.js:61 Attempting to send message: {text: 'hey hello my name is Shoaib As...', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', userId: '1f3d6056-3639-4f5f-9b84-2d4075b56200', …}
+Console.js:61 Sending message through WebSocket: {type: 'chat', text: 'hey hello my name is Shoaib Ashraf and I have done my bachelor and computer science from', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', …}
+Console.js:61 No OpenAI translation found for immediate playback
+Console.js:61 Speech ended
+Console.js:61 [WebSpeech Streaming] Processing chunk with 0 final chars, 16 interim chars after 1.7s
+Console.js:61 [WebSpeech Streaming] Processing chunk after 1710ms: {finalTextLength: 0, interimTextLength: 16, combinedLength: 15}
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: Urdu University...
+Console.js:61 WebSpeech: Stored source text for translation matching: Urdu University
+Console.js:61 [Listen] First time handling this transcript in current time window: Urdu University...
+Console.js:61 Attempting to send message: {text: 'Urdu University...', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', userId: '1f3d6056-3639-4f5f-9b84-2d4075b56200', …}
+Console.js:61 Sending message through WebSocket: {type: 'chat', text: 'Urdu University', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', …}
+Console.js:61 No OpenAI translation found for immediate playback
+Console.js:61 Received message: {type: 'chat', text: 'hey hello my name is Shoaib Ashraf and I have done my bachelor and computer science from', translatedText: 'مرحبًا، اسمي شعيب أشرف ولقد حصلت على درجة البكالوريوس في علوم الحاسوب.', sourceLang: 'en', targetLang: 'ar', …}
+Console.js:61 Adding new message to chat: {text: 'hey hello my name is Shoaib As...', translatedText: 'مرحبًا، اسمي شعيب أشرف ولقد حص...', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:27.802Z', …}
+Console.js:61 Listen page: New message detected, checking for playback: {text: 'hey hello my name is Shoaib Ashraf and I have done my bachelor and computer science from', translatedText: 'مرحبًا، اسمي شعيب أشرف ولقد حصلت على درجة البكالوريوس في علوم الحاسوب.', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:27.802Z', …}
+Console.js:61 Listen page: Processing new message created in current session:
+      - Message timestamp: 2025-04-29T16:02:27.802Z
+      - Session started: 2025-04-29T16:02:09.977Z
+      - Message age: 0s ago
+Console.js:61 Listen page: Playing NEW WebSpeech message translation
+Console.js:61 Listen page: Setting force play flag for next utterance
+Console.js:61 Listen page: PlayTranslation called: text="مرحبًا، اسمي شعيب أش...", lang=ar, ignoreMainSpeaker=true
+Console.js:61 Listen page: Playing audio in target language: ar
+Console.js:61 Allowing audio playback in Listen mode for real-time translation
+Console.js:61 Speech check for auto-play: isChat=false, isOpenAI=undefined, isManual=true, playTargetEnabled=false
+Console.js:61 Manual playback requested - allowing audio regardless of other settings
+Console.js:61 Arabic text detected in Listen mode, using enhanced reliability mode
+Console.js:61 Split Arabic text into 2 chunks for reliable playback
+Console.js:61 [DEBUG] Speech request - text: "مرحبًا،..." lang: ar-sa
+Console.js:61 [DEBUG] 🔊 Force playing this utterance (unblocked by force flag)
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "مرحبًا،..." (lang: ar-SA)
+Console.js:61 Arabic chunk 0 started speaking
+Console.js:61 Received message: {type: 'chat', text: 'Urdu University', translatedText: 'جامعة الأوردو', sourceLang: 'en', targetLang: 'ar', …}
+Console.js:61 Adding new message to chat: {text: 'Urdu University...', translatedText: 'جامعة الأوردو...', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:28.714Z', …}
+Console.js:61 Received translation for WebSpeech message: جامعة الأوردو
+Console.js:61 [WebSpeech] Processing message in listen mode with dedupKey
+Console.js:61 WEBSPEECH TRANSLATION RECEIVED: {sourceText: 'Urdu University', translatedText: 'جامعة الأوردو'}
+Console.js:61  WebSpeech Translation Status  Source text: Urdu University Translation: جامعة الأوردو Both will be displayed in chat with the Translation label
+Console.js:61 [WebSpeech] Processing translation in listen mode: "Urdu University..." -> "جامعة الأوردو..."
+Console.js:61 [Listen] BLOCKING duplicate transcript handler call: Urdu University...
+Console.js:61 Listen page: New message detected, checking for playback: {text: 'Urdu University', translatedText: 'جامعة الأوردو', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:28.714Z', …}
+Console.js:61 Listen page: Processing new message created in current session:
+      - Message timestamp: 2025-04-29T16:02:28.714Z
+      - Session started: 2025-04-29T16:02:09.977Z
+      - Message age: 0s ago
+Console.js:61 Arabic speech interrupted, advancing to next chunk
+Console.js:61 Listen page: Playing NEW WebSpeech message translation
+Console.js:61 Listen page: Setting force play flag for next utterance
+Console.js:61 Listen page: PlayTranslation called: text="جامعة الأوردو...", lang=ar, ignoreMainSpeaker=true
+Console.js:61 Listen page: Playing audio in target language: ar
+Console.js:61 Allowing audio playback in Listen mode for real-time translation
+Console.js:61 Speech check for auto-play: isChat=false, isOpenAI=undefined, isManual=true, playTargetEnabled=false
+Console.js:61 Manual playback requested - allowing audio regardless of other settings
+Console.js:61 Arabic text detected, using ar-SA language code
+Console.js:61 Available voices: (24) ['Microsoft David - English (United States) (en-US)', 'Microsoft Naayf - Arabic (Saudi) (ar-SA)', 'Microsoft Hoda - Arabic (Egypt) (ar-EG)', 'Microsoft Mark - English (United States) (en-US)', 'Microsoft Zira - English (United States) (en-US)', 'Google Deutsch (de-DE)', 'Google US English (en-US)', 'Google UK English Female (en-GB)', 'Google UK English Male (en-GB)', 'Google español (es-ES)', 'Google español de Estados Unidos (es-US)', 'Google français (fr-FR)', 'Google हिन्दी (hi-IN)', 'Google Bahasa Indonesia (id-ID)', 'Google italiano (it-IT)', 'Google 日本語 (ja-JP)', 'Google 한국의 (ko-KR)', 'Google Nederlands (nl-NL)', 'Google polski (pl-PL)', 'Google português do Brasil (pt-BR)', 'Google русский (ru-RU)', 'Google 普通话（中国大陆） (zh-CN)', 'Google 粤語（香港） (zh-HK)', 'Google 國語（臺灣） (zh-TW)']
+Console.js:61 Selected voice: Microsoft Naayf - Arabic (Saudi) for language: ar-SA
+Console.js:61 [DEBUG] Speech request - text: "جامعة الأوردو..." lang: ar-sa
+Console.js:61 [DEBUG] 🔊 Force playing this utterance (unblocked by force flag)
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "جامعة الأوردو..." (lang: ar-SA)
+Console.js:61 Speech interrupted/canceled (attempt #3), attempting recovery...
+Console.js:61 [DEBUG] Speech request - text: "اسمي شعيب أشرف ولقد ..." lang: ar-sa
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "اسمي شعيب أشرف ولقد ..." (lang: ar-SA)
+Console.js:61 [WebSpeech Streaming] Processing chunk with 122 final chars, 0 interim chars after 1.6s
+Console.js:61 [WebSpeech Streaming] Processing chunk after 1604ms: {finalTextLength: 122, interimTextLength: 0, combinedLength: 122}
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: hey hello my name is Shoaib As...
+Console.js:61 WebSpeech: Stored source text for translation matching: hey hello my name is Shoaib Ashraf and I have done my bachelor and computer science from Federal Urdu University Islamabad
+Console.js:61 [Listen] First time handling this transcript in current time window: hey hello my name is Shoaib As...
+Console.js:61 Attempting to send message: {text: 'hey hello my name is Shoaib As...', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', userId: '1f3d6056-3639-4f5f-9b84-2d4075b56200', …}
+Console.js:61 Sending message through WebSocket: {type: 'chat', text: 'hey hello my name is Shoaib Ashraf and I have done…er science from Federal Urdu University Islamabad', sourceLang: 'en', targetLang: 'ar', roomId: 'FNN', …}
+Console.js:61 No OpenAI translation found for immediate playback
+Console.js:61 Arabic chunk 1 started speaking
+Console.js:61 Speech already in progress, skipping recovery attempt
+Console.js:61 Received message: {type: 'chat', text: 'hey hello my name is Shoaib Ashraf and I have done…er science from Federal Urdu University Islamabad', translatedText: 'مرحبًا، اسمي شعيب أشرف ولقد حصلت على درجة البكالور…اسوب من الجامعة الفيدرالية الأوردو في إسلام آباد.', sourceLang: 'en', targetLang: 'ar', …}
+Console.js:61 Adding new message to chat: {text: 'hey hello my name is Shoaib As...', translatedText: 'مرحبًا، اسمي شعيب أشرف ولقد حص...', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:31.041Z', …}
+Console.js:61 Received translation for WebSpeech message: مرحبًا، اسمي شعيب أشرف ولقد حصلت على درجة البكالوريوس في علوم الحاسوب من الجامعة الفيدرالية الأوردو في إسلام آباد.
+Console.js:61 [WebSpeech] Processing message in listen mode with dedupKey
+Console.js:61 WEBSPEECH TRANSLATION RECEIVED: {sourceText: 'hey hello my name is Shoaib Ashraf and I have done…er science from Federal Urdu University Islamabad', translatedText: 'مرحبًا، اسمي شعيب أشرف ولقد حصلت على درجة البكالور…اسوب من الجامعة الفيدرالية الأوردو في إسلام آباد.'}
+Console.js:61  WebSpeech Translation Status  Source text: hey hello my name is Shoaib Ashraf and I have done my bachelor and computer science from Federal Urdu University Islamabad Translation: مرحبًا، اسمي شعيب أشرف ولقد حصلت على درجة البكالوريوس في علوم الحاسوب من الجامعة الفيدرالية الأوردو في إسلام آباد. Both will be displayed in chat with the Translation label
+Console.js:61 [WebSpeech] Processing translation in listen mode: "hey hello my name is Shoaib As..." -> "مرحبًا، اسمي شعيب أشرف ولقد حص..."
+Console.js:61 [Listen] First time handling this transcript in current time window: hey hello my name is Shoaib As...
+Console.js:61 Duplicate message detected within 3 seconds - not sending again: hey hello my name is Shoaib As
+Console.js:61 Found OpenAI translation, playing audio immediately: مرحبًا، اسمي شعيب أشرف ولقد حص...
+Console.js:61 Listen page: PlayTranslation called: text="مرحبًا، اسمي شعيب أش...", lang=ar, ignoreMainSpeaker=false
+Console.js:61 Listen page: Playing audio in target language: ar
+Console.js:61 Allowing audio playback in Listen mode for real-time translation
+Console.js:61 Speech check for auto-play: isChat=false, isOpenAI=undefined, isManual=true, playTargetEnabled=false
+Console.js:61 Manual playback requested - allowing audio regardless of other settings
+Console.js:61 Arabic text detected in Listen mode, using enhanced reliability mode
+Console.js:61 Split Arabic text into 2 chunks for reliable playback
+Console.js:61 Listen page: New message detected, checking for playback: {text: 'hey hello my name is Shoaib Ashraf and I have done…er science from Federal Urdu University Islamabad', translatedText: 'مرحبًا، اسمي شعيب أشرف ولقد حصلت على درجة البكالور…اسوب من الجامعة الفيدرالية الأوردو في إسلام آباد.', sourceLang: 'en', targetLang: 'ar', timestamp: '2025-04-29T16:02:31.041Z', …}
+Console.js:61 Listen page: Processing new message created in current session:
+      - Message timestamp: 2025-04-29T16:02:31.041Z
+      - Session started: 2025-04-29T16:02:09.977Z
+      - Message age: 0s ago
+Console.js:61 Arabic speech interrupted, advancing to next chunk
+Console.js:61 [DEBUG] Speech request - text: "مرحبًا،..." lang: ar-sa
+Console.js:61 [DEBUG] 🔊 Force playing this utterance (unblocked by force flag)
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "مرحبًا،..." (lang: ar-SA)
+Console.js:61 Listen page: Skipping already played WebSpeech translation: مرحبًا، اسمي شعيب أشرف ولقد حص...
+Console.js:61 Arabic chunk 0 started speaking
+Console.js:61 Arabic chunk 0 completed normally
+Console.js:61 [DEBUG] Speech request - text: "اسمي شعيب أشرف ولقد ..." lang: ar-sa
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "اسمي شعيب أشرف ولقد ..." (lang: ar-SA)
+Console.js:61 Arabic chunk 1 started speaking
+Console.js:61 Speech recognition ended, checking if we should restart
+Console.js:61 WebSpeech onend - justStarted: false, isStillActive: true, isListening: false
+Console.js:61 Recognition ended but should be listening. Attempting to restart...
+Console.js:61 Successfully restarted recognition after end event
+Console.js:61 Speech recognition started in language: en-US
+Console.js:61 Arabic chunk 1 completed normally
+Console.js:61 No speech detected, but continuing to listen...
+Console.js:61 Speech recognition ended, checking if we should restart
+Console.js:61 WebSpeech onend - justStarted: false, isStillActive: true, isListening: false
+Console.js:61 Recognition ended but should be listening. Attempting to restart...
+Console.js:61 Successfully restarted recognition after end event
+Console.js:61 Speech recognition started in language: en-US

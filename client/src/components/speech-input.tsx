@@ -704,14 +704,28 @@ export function SpeechInput({
     // Add debug logging to track toggle calls
     console.log(`handleToggle called - current isListening: ${isListening}, isResetting: ${isResetting}, isConnecting: ${isConnecting}`);
     
-    // Prevent rapid toggling by using a timestamp check
+    // More responsive toggle for button clicks while still preventing accidental double-triggers
     const now = Date.now();
     const lastToggleTime = (window as any).__lastToggleTime || 0;
-    if (now - lastToggleTime < 1500) {
-      console.log("Ignoring rapid toggle request");
+    
+    // For manual clicks (not programmatic), use a shorter debounce period to improve responsiveness
+    const isManualClick = new Error().stack?.includes('HTMLUnknownElement.callCallback');
+    const debounceTime = isManualClick ? 500 : 1500;
+    
+    if (now - lastToggleTime < debounceTime) {
+      console.log(`Ignoring rapid toggle request (${now - lastToggleTime}ms since last toggle)`);
       return;
     }
+    
+    // Update the last toggle time immediately to prevent race conditions
     (window as any).__lastToggleTime = now;
+    
+    // Force-clear any active state flags for more responsive toggling
+    if (isListening) {
+      // When turning off, immediately set the global state even before the async operation completes
+      (window as any).__webSpeechActive = false;
+      (window as any).__openAIActive = false;
+    }
 
     try {
       if (isListening) {

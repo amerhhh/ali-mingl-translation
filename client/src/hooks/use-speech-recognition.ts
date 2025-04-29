@@ -446,11 +446,22 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
     }
     (window as any).__lastWebSpeechStopTime = now;
 
-    // Check if we just started - prevent auto-stop within 3 seconds of starting
-    const startTime = (window as any).__webSpeechStartTime || 0;
-    if (now - startTime < 3000) {
-      console.log('Ignoring WebSpeech stop request within 3 seconds of starting');
-      return;
+    // Check if this is a user-initiated stop from a UI click (like the microphone button)
+    // Stack trace for button clicks includes 'callCallback' from React's synthetic event handler
+    const isUserInitiatedStop = new Error().stack?.includes('HTMLUnknownElement.callCallback');
+    
+    // Only apply the timing protection for automatic/programmatic stops, not for explicit user actions
+    if (!isUserInitiatedStop) {
+      // Check if we just started - prevent auto-stop within 3 seconds of starting (for automatic events only)
+      const startTime = (window as any).__webSpeechStartTime || 0;
+      if (now - startTime < 3000) {
+        console.log('Ignoring WebSpeech stop request within 3 seconds of starting (auto/programmatic)');
+        return;
+      }
+    } else {
+      console.log('User clicked stop button - immediately stopping WebSpeech regardless of timing');
+      // Force reset the global state for user-initiated stops
+      (window as any).__webSpeechActive = false;
     }
 
     // Only stop if we're actually listening according to our tracking

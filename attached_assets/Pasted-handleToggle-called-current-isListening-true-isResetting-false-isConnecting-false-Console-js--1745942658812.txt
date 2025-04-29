@@ -1,0 +1,67 @@
+handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Stopping WebSpeech recognition
+Console.js:61 WebSpeech stopListening called from: Error
+    at https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/src/hooks/use-speech-recognition.ts:258:57
+    at handleToggle (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/src/components/speech-input.tsx:495:17)
+    at HTMLUnknownElement.callCallback2 (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3674:22)
+    at Object.invokeGuardedCallbackDev (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3699:24)
+    at invokeGuardedCallback (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3733:39)
+    at invokeGuardedCallbackAndCatchFirstError (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3736:33)
+    at executeDispatch (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7014:11)
+    at processDispatchQueueItemsInOrder (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7034:15)
+    at processDispatchQueue (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7043:13)
+    at dispatchEventsForPlugins (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7051:11)
+Console.js:61 Ignoring WebSpeech stop request within 3 seconds of starting
+Console.js:61 handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Ignoring rapid toggle request
+Console.js:61 handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Stopping WebSpeech recognition
+Console.js:61 WebSpeech stopListening called from: Error
+    at https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/src/hooks/use-speech-recognition.ts:258:57
+    at handleToggle (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/src/components/speech-input.tsx:495:17)
+    at HTMLUnknownElement.callCallback2 (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3674:22)
+    at Object.invokeGuardedCallbackDev (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3699:24)
+    at invokeGuardedCallback (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3733:39)
+    at invokeGuardedCallbackAndCatchFirstError (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3736:33)
+    at executeDispatch (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7014:11)
+    at processDispatchQueueItemsInOrder (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7034:15)
+    at processDispatchQueue (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7043:13)
+    at dispatchEventsForPlugins (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7051:11)
+Console.js:61 Ignoring WebSpeech stop request within 3 seconds of starting
+Console.js:61 handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Ignoring rapid toggle request
+Console.js:61 handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Ignoring rapid toggle request
+Console.js:61 handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Ignoring rapid toggle request
+Console.js:61 handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Ignoring rapid toggle request
+Console.js:61 handleToggle called - current isListening: true, isResetting: false, isConnecting: false
+Console.js:61 Stopping WebSpeech recognition
+Console.js:61 WebSpeech stopListening called from: Error
+    at https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/src/hooks/use-speech-recognition.ts:258:57
+    at handleToggle (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/src/components/speech-input.tsx:495:17)
+    at HTMLUnknownElement.callCallback2 (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3674:22)
+    at Object.invokeGuardedCallbackDev (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3699:24)
+    at invokeGuardedCallback (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3733:39)
+    at invokeGuardedCallbackAndCatchFirstError (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:3736:33)
+    at executeDispatch (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7014:11)
+    at processDispatchQueueItemsInOrder (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7034:15)
+    at processDispatchQueue (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7043:13)
+    at dispatchEventsForPlugins (https://ed92880c-eabe-4b7b-8b58-b17328d0b805-00-2abhclfmmrxtg.worf.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=eeb96306:7051:11)
+Console.js:61 Actually stopping WebSpeech recognition
+Console.js:61 Stopped speech recognition
+Console.js:61 Global speech tracking updated: {isListening: false, currentLanguage: 'en', usingOpenAI: false, lastToggleTime: 0, preventLanguageEffectTrigger: false}
+Console.js:61 Speech recognition state updated: 
+      useOpenAI: false
+      isListeningOpenAI: false
+      isListeningWebSpeech: false
+      combined isListening: false
+      isResetting: false
+      isConnecting: false
+    
+Console.js:61 handleToggle called - current isListening: false, isResetting: false, isConnecting: false
+Console.js:61 Ignoring rapid toggle request
+Console.js:61 Speech recognition ended, checking if we should restart
+Console.js:61 WebSpeech onend - justStarted: false, isStillActive: false, isListening: false
+Console.js:61 Recognition ended and not restarting
