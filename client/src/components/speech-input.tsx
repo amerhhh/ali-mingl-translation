@@ -724,8 +724,32 @@ export function SpeechInput({
   }, [isListening, isListeningOpenAI, isListeningWebSpeech, useOpenAI, isResetting, isConnecting]);
 
   const handleToggle = async () => {
-    // Add debug logging to track toggle calls
-    console.log(`handleToggle called - current isListening: ${isListening}, isResetting: ${isResetting}, isConnecting: ${isConnecting}`);
+    // Clear any stuck processing flags that could prevent proper handling
+    if (window.__webSpeechStreamingProcessingChunk) {
+      window.__webSpeechStreamingProcessingChunk = false;
+    }
+    
+    // Set debug flag for more detailed logging on next operation
+    (window as any).__debugSpeech = true;
+    
+    // Log detailed diagnostic information to help track microphone control flow
+    const debugInfo = {
+      isListening,
+      isResetting,
+      isConnecting,
+      usingOpenAI: window.__speechInputTracking?.usingOpenAI || false,
+      webSpeechActive: (window as any).__webSpeechActive || false,
+      webRTCActive: !!peerConnection,
+      listenPageMode: window.location.pathname.includes('/listen'),
+      streamingEnabled: window.__webSpeechStreamingEnabled || window.__streamingEnabled || false,
+      interimLength: transcript?.interimText?.length || 0,
+      finalLength: transcript?.finalText?.length || 0,
+      lastToggleTime: window.__speechInputTracking?.lastToggleTime || 0,
+      timeSinceLastToggle: window.__speechInputTracking?.lastToggleTime ? 
+        (Date.now() - window.__speechInputTracking.lastToggleTime) : -1
+    };
+    
+    console.log(`handleToggle called - current state:`, debugInfo);
     
     // More responsive toggle for button clicks while still preventing accidental double-triggers
     const now = Date.now();

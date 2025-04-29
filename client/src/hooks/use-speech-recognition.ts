@@ -213,6 +213,22 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
             // Log diagnostic info to help track chunking behavior
             console.log(`[WebSpeech Streaming] Processing chunk with ${finalText.length} final chars, ${interimText.length} interim chars after ${Math.round(timeSinceLastChunk/100)/10}s`);
             
+            // Add visual debugging when in development mode
+            if (import.meta.env.DEV || (window as any).__debugSpeech) {
+              // Create more detailed debugging for optimizing chunk detection
+              const debugInfo = {
+                timeSinceLastChunk: Math.round(timeSinceLastChunk/100)/10,
+                textLength: combinedText.length,
+                lastProcessedLength: (window.__webSpeechStreamingLastProcessedText || '').length,
+                textDiff: combinedText.length - (window.__webSpeechStreamingLastProcessedText || '').length,
+                isSubstantialTextGrowth,
+                hasSignificantDelay,
+                hasLongText,
+                hasMinimalText
+              };
+              console.table(debugInfo);
+            }
+            
             // Force a "chunk final" event by creating a copy with isFinal:true
             const streamingResult = {
               finalText: combinedText,

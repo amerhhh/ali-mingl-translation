@@ -614,6 +614,21 @@ export function useOpenAISpeechRecognition({
                             console.error("[OpenAI WebRTC] Error extracting room ID:", e);
                           }
                           
+                          // Additional debug logging in development mode
+                          if (import.meta.env.DEV || (window as any).__debugSpeech) {
+                            const debugInfo = {
+                              timeSinceLastChunk,
+                              sourceLength: sourceText.length,
+                              translationLength: translatedText.length,
+                              lastProcessedLength: (window.__streamingLastProcessedText || '').length,
+                              textDiff: sourceText.length - (window.__streamingLastProcessedText || '').length,
+                              dynamicInterval,
+                              isSubstantialDifference,
+                              processingInRoom: roomId
+                            };
+                            console.table(debugInfo);
+                          }
+                          
                           // Create a filtered translation without trigger phrases
                           const filteredTranslation = translatedText
                             .replace(/translate them/gi, "")
