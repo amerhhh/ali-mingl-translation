@@ -464,21 +464,58 @@ export function SpeechInput({
             
             // For listen mode, use persistent tracking to completely prevent duplication
             if (isListenPage) {
-              // Create a message fingerprint
-              const messageKey = `${message.text}-${message.translatedText}`;
+              // Enhanced duplicate detection for WebSocket messages
+              // Create a more robust fingerprint that captures message essence
+              let messageFingerprint = '';
+              const trimmedText = message.text.trim();
+              const trimmedTranslation = message.translatedText.trim();
               
-              // Use a shared global cache for listen mode messages
+              // Create a hybrid fingerprint using both text and translation
+              if (trimmedText.length > 30) {
+                // For longer text, create a fingerprint from parts of text and translation
+                const textBeginning = trimmedText.substring(0, 10);
+                const textEnd = trimmedText.substring(trimmedText.length - 10);
+                const transBeginning = trimmedTranslation.substring(0, 10);
+                
+                messageFingerprint = `${textBeginning}...${textEnd}|${transBeginning}`;
+              } else {
+                // For shorter text, use the full text and part of translation
+                messageFingerprint = `${trimmedText}|${trimmedTranslation.substring(0, 15)}`;
+              }
+              
+              // Use a longer deduplication window to prevent repetition (60 seconds)
+              const deduplicationWindow = 60000;
+              const now = Date.now();
+              
+              // Global persistent storage for processed messages
               const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
               
-              // Check if we've seen this message before in listen mode
-              if (processedMessages[messageKey]) {
-                console.log(`[WebSpeech] BLOCKING duplicate transcript in listen mode:`, message.text.substring(0, 30) + "...");
+              // Check if we've seen this message or a similar one recently
+              const matchingKey = Object.keys(processedMessages).find(key => {
+                // Check if the fingerprint is similar
+                const isSimilar = (
+                  // Direct match
+                  key === messageFingerprint ||
+                  // Or contains significant overlap in text part (before the | symbol)
+                  (key.split('|')[0].length > 10 && 
+                   messageFingerprint.split('|')[0].length > 10 &&
+                   (key.split('|')[0].includes(messageFingerprint.split('|')[0].substring(0, 10)) ||
+                    messageFingerprint.split('|')[0].includes(key.split('|')[0].substring(0, 10))))
+                );
+                
+                // Only consider it a match if processed recently
+                return isSimilar && (now - processedMessages[key] < deduplicationWindow);
+              });
+              
+              if (matchingKey) {
+                console.log(`[WebSpeech] BLOCKING similar translation in listen mode:`, message.text.substring(0, 30) + "...");
+                console.log(`[WebSpeech] Matched with existing key: ${matchingKey.substring(0, 30)}...`);
                 return;
               }
               
-              // Mark it as processed to prevent duplicate processing
-              processedMessages[messageKey] = true;
-              console.log(`[WebSpeech] First time processing transcript in listen mode with dedupKey`);
+              // Mark this as processed with current timestamp
+              processedMessages[messageFingerprint] = now;
+              console.log(`[WebSpeech] Processing translation in listen mode: "${trimmedText.substring(0, 30)}..." -> "${trimmedTranslation.substring(0, 30)}..."`);
             }
             
             // IMPORTANT: For WebSpeech, make sure we're sending the original transcript text
