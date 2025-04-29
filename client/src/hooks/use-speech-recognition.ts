@@ -437,30 +437,42 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
       }
     }
 
-    // Add a timestamp check to prevent multiple rapid stop calls
-    const now = Date.now();
-    const lastStopTime = (window as any).__lastWebSpeechStopTime || 0;
-    if (now - lastStopTime < 1000) {
-      console.log('Ignoring rapid WebSpeech stop request');
-      return;
-    }
-    (window as any).__lastWebSpeechStopTime = now;
-
-    // Check if this is a user-initiated stop from a UI click (like the microphone button)
-    // Stack trace for button clicks includes 'callCallback' from React's synthetic event handler
+    // Check if this is a user-initiated stop from UI interaction (like a button click)
     const isUserInitiatedStop = new Error().stack?.includes('HTMLUnknownElement.callCallback');
+    const now = Date.now();
     
-    // Only apply the timing protection for automatic/programmatic stops, not for explicit user actions
+    // User-initiated stops should bypass some of the timing protection
+    // for more responsive microphone control    
+    const lastStopTime = (window as any).__lastWebSpeechStopTime || 0;
+    
     if (!isUserInitiatedStop) {
-      // Check if we just started - prevent auto-stop within 3 seconds of starting (for automatic events only)
-      const startTime = (window as any).__webSpeechStartTime || 0;
-      if (now - startTime < 3000) {
-        console.log('Ignoring WebSpeech stop request within 3 seconds of starting (auto/programmatic)');
+      // For automatic/programmatic stops, use normal debounce timing
+      if (now - lastStopTime < 1000) {
+        console.log('Ignoring rapid WebSpeech stop request (automatic/programmatic)');
         return;
       }
     } else {
+      // For user-initiated stops, use shorter debounce timing
+      if (now - lastStopTime < 400) {
+        console.log('Ignoring rapid user-initiated WebSpeech stop request');
+        return;
+      }
+      console.log('Honoring user-initiated WebSpeech stop request');
+    }
+    
+    // Update timestamp for future reference
+    (window as any).__lastWebSpeechStopTime = now;
+
+    // Check if we just started but allow user-initiated stops to bypass this check
+    const startTime = (window as any).__webSpeechStartTime || 0;
+    if (!isUserInitiatedStop && (Date.now() - startTime < 3000)) {
+      console.log('Ignoring WebSpeech stop request within 3 seconds of starting (auto/programmatic)');
+      return;
+    }
+    
+    // For user initiated stops, immediately mark as inactive globally
+    if (isUserInitiatedStop) {
       console.log('User clicked stop button - immediately stopping WebSpeech regardless of timing');
-      // Force reset the global state for user-initiated stops
       (window as any).__webSpeechActive = false;
     }
 

@@ -674,16 +674,15 @@ export default function Listen() {
           // For WebSpeech streaming, we need to check if this message is a "final" version of something
           // that we've already played in chunks. We'll use a combination of timestamp and content matching
           if (usingWebSpeech) {
-            // Get the current registry of played translations from either this component or global state
-            const globalRegistry = (window as any).__listenModePlayedTranslations || {};
-            const registry = { ...globalRegistry, ...playedTranslationRegistry.current };
+            // Get the current registry of played translations from global state
+            const currentRegistry = (window as any).__listenModePlayedTranslations || {};
             
             // Create a fingerprint for this translation (first 15 chars for partial matching)
             const translationPrefix = filteredText.substring(0, 15);
             
             // Check if we have a record of playing something with this prefix
             // This catches cases where the final translation is just a completed version of already played chunks
-            const hasPlayedSimilar = Object.keys(registry).some(key => {
+            const hasPlayedSimilar = Object.keys(currentRegistry).some(key => {
               // If this exact message or a substantial part of it has been played
               return key === filteredText || 
                     // If this message contains a prefix we've already played
@@ -698,9 +697,9 @@ export default function Listen() {
               return;
             }
             
-            // Mark this translation as played to prevent future duplicates
-            playedTranslationRegistry.current[filteredText] = true;
-            (window as any).__listenModePlayedTranslations = { ...globalRegistry, [filteredText]: true };
+            // Mark this translation as played to prevent future duplicates using global registry
+            // Update the registry with this new translation
+            (window as any).__listenModePlayedTranslations = { ...currentRegistry, [filteredText]: true };
             
             // Log that we're playing this as a new translation
             console.log("Listen page: Playing NEW WebSpeech message translation");
