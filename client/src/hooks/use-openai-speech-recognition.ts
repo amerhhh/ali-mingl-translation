@@ -23,6 +23,11 @@ declare global {
     __user_emoji: string;
     __minglWebSocket: WebSocket;
     __chatWebSocket: WebSocket;
+    // Streaming related properties
+    __streamingEnabled: boolean;
+    __lastStreamingChunkTime: number;
+    __streamingChunkInterval: number;
+    __streamingLastProcessedText: string;
   }
 }
 
@@ -545,6 +550,67 @@ export function useOpenAISpeechRecognition({
                     } else {
                       // Add to translation
                       window.__openAIRawTranscription.translatedText += delta;
+                    }
+                    
+                    // STREAMING: Check if we should process the current chunk in listen mode
+                    if (window.__streamingEnabled && window.__openAIRawTranscription.isSourceComplete) {
+                      const now = Date.now();
+                      const timeSinceLastChunk = now - (window.__lastStreamingChunkTime || 0);
+                      
+                      // Process if enough time has passed since last chunk was processed
+                      if (timeSinceLastChunk >= window.__streamingChunkInterval && 
+                          window.__openAIRawTranscription.sourceText.trim() && 
+                          window.__openAIRawTranscription.translatedText.trim()) {
+                        
+                        // Only process if we have substantial text that's different from last processed
+                        const { sourceText, translatedText } = window.__openAIRawTranscription;
+                        
+                        // Don't process too small chunks or duplicates
+                        if (sourceText.length > 5 && sourceText !== window.__streamingLastProcessedText) {
+                          console.log("[OpenAI WebRTC] Processing streaming chunk:", {
+                            timeSinceLastChunk,
+                            sourceTextLength: sourceText.length,
+                            translationLength: translatedText.length
+                          });
+                          
+                          // Extract room ID for the message
+                          let roomId = 'unknown';
+                          try {
+                            const pathParts = window.location.pathname.split('/');
+                            const listenIndex = pathParts.indexOf('listen');
+                            if (listenIndex >= 0 && listenIndex + 1 < pathParts.length) {
+                              roomId = `listen_${pathParts[listenIndex + 1]}`;
+                            }
+                          } catch (e) {
+                            console.error("[OpenAI WebRTC] Error extracting room ID:", e);
+                          }
+                          
+                          // Create a filtered translation without trigger phrases
+                          const filteredTranslation = translatedText
+                            .replace(/translate them/gi, "")
+                            .replace(/translation:/gi, "")
+                            .replace(/translating\.{0,3}/gi, "") // Remove "translating" with or without ellipsis
+                            .trim();
+                          
+                          // Call the callback with the current transcript chunk
+                          if (onTranslation && filteredTranslation) {
+                            onTranslation(sourceText, filteredTranslation);
+                          }
+                          
+                          // Send to server as a streaming chunk
+                          if (filteredTranslation) {
+                            try {
+                              sendToServer(sourceText, filteredTranslation, roomId);
+                            } catch (e) {
+                              console.error('[OpenAI WebRTC] Error sending streaming chunk to server:', e);
+                            }
+                          }
+                          
+                          // Update the last chunk time and processed text
+                          window.__lastStreamingChunkTime = now;
+                          window.__streamingLastProcessedText = sourceText;
+                        }
+                      }
                     }
                   } else {
                     // Add to source text
@@ -1273,6 +1339,15 @@ export function useOpenAISpeechRecognition({
     try {
       // Store start time to prevent auto-stop for a few seconds
       (window as any).__openAIStartTime = Date.now();
+      
+      // Initialize streaming properties
+      const isListenPage = window.location.pathname.includes('/listen');
+      window.__streamingEnabled = isListenPage; // Only enable streaming in listen mode
+      window.__lastStreamingChunkTime = 0;
+      window.__streamingChunkInterval = 3000; // Process every 3 seconds in listen mode
+      window.__streamingLastProcessedText = '';
+      
+      console.log(`[OpenAI Speech] Streaming ${window.__streamingEnabled ? 'enabled' : 'disabled'}, chunk interval: ${window.__streamingChunkInterval}ms`);
       
       // First clean up any existing connections to ensure a fresh start
       cleanupConnection();

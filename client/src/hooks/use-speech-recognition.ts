@@ -17,6 +17,16 @@ interface AudioDevice {
   kind: 'audioinput' | 'audiooutput';
 }
 
+// Declare global window properties for streaming
+declare global {
+  interface Window {
+    __webSpeechStreamingEnabled: boolean;
+    __webSpeechLastStreamingChunkTime: number;
+    __webSpeechStreamingChunkInterval: number;
+    __webSpeechStreamingLastProcessedText: string;
+  }
+}
+
 export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeechRecognitionProps = {}) {
   const [isListening, setIsListening] = useState(false);
   const [transcriptResult, setTranscriptResult] = useState<TranscriptResult>({
@@ -142,7 +152,48 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
           interimText = transcript;
         }
       }
+      
+      // Check if we should process streaming chunk
+      if (window.__webSpeechStreamingEnabled) {
+        const now = Date.now();
+        const timeSinceLastChunk = now - (window.__webSpeechLastStreamingChunkTime || 0);
+        const hasSubstantialText = finalText.length > 20 || (finalText.length > 5 && interimText.length > 10);
+        const isNewContent = finalText !== window.__webSpeechStreamingLastProcessedText;
+        
+        // Process if enough time has passed since last chunk was processed and we have substantial text
+        if (timeSinceLastChunk >= window.__webSpeechStreamingChunkInterval && 
+            hasSubstantialText && 
+            isNewContent) {
+          
+          // Create temporary final text that includes both final and interim text
+          const combinedText = (finalText + ' ' + interimText).trim();
+          
+          console.log(`[WebSpeech Streaming] Processing chunk after ${timeSinceLastChunk}ms:`, {
+            finalTextLength: finalText.length,
+            interimTextLength: interimText.length,
+            combinedLength: combinedText.length,
+          });
+          
+          // Force a "chunk final" event by creating a shallow copy with isFinal:true
+          const streamingResult = {
+            finalText: combinedText,
+            interimText: '',
+            isFinal: true
+          };
+          
+          // Set the transcript result with our forced "chunk final" data
+          setTranscriptResult(streamingResult);
+          
+          // Update tracking variables
+          window.__webSpeechLastStreamingChunkTime = now;
+          window.__webSpeechStreamingLastProcessedText = finalText;
+          
+          // Return early to avoid overwriting our streaming result
+          return;
+        }
+      }
 
+      // Standard non-streaming processing
       setTranscriptResult({
         finalText,
         interimText,
@@ -274,7 +325,16 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
       const now = Date.now();
       (window as any).__webSpeechStartTime = now;
       (window as any).__webSpeechActive = true;
+      
+      // Initialize streaming properties
+      const isListenPage = window.location.pathname.includes('/listen');
+      window.__webSpeechStreamingEnabled = isListenPage; // Only enable streaming in listen mode
+      window.__webSpeechLastStreamingChunkTime = 0;
+      window.__webSpeechStreamingChunkInterval = 3000; // Process every 3 seconds in listen mode
+      window.__webSpeechStreamingLastProcessedText = '';
+      
       console.log(`WebSpeech starting at ${now}, marked as active globally`);
+      console.log(`WebSpeech streaming ${window.__webSpeechStreamingEnabled ? 'enabled' : 'disabled'}, chunk interval: ${window.__webSpeechStreamingChunkInterval}ms`);
 
       // Reset restart counter
       restartAttempts.current = 0;
