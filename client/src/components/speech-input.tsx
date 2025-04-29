@@ -815,6 +815,20 @@ export function SpeechInput({
           try {
             if (usingOpenAI) {
               console.log(`Starting OpenAI speech recognition (attempt ${retryCount + 1}/${maxRetries})`);
+              
+              // Initialize streaming functionality for OpenAI
+              if (window) {
+                console.log('Initializing OpenAI streaming functionality');
+                
+                // Enable streaming by default
+                window.__streamingEnabled = true;
+                
+                // Initialize timestamps and intervals
+                window.__lastStreamingChunkTime = Date.now();
+                window.__streamingChunkInterval = 2500; // Default 2.5 seconds between chunks for OpenAI
+                window.__streamingLastProcessedText = "";
+              }
+              
               // For OpenAI, use the await since it returns a Promise<boolean>
               success = await startListeningOpenAI();
               
