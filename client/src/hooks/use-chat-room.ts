@@ -452,21 +452,29 @@ export function useChatRoom(roomId: string): ChatRoom {
   ) => {
     if (!text.trim() || !roomId) return;
 
-    // Check for duplicate messages within a short timeframe (3 seconds)
+    // Check for duplicate messages within a short timeframe (5 seconds)
     const now = Date.now();
+    // Create normalized message fingerprint
+    const normalizedText = text.trim().toLowerCase();
+    const normalizedKey = normalizedText.substring(0, 50);
+    
     if (lastSentMessage.current && 
-        lastSentMessage.current.text === text && 
+        (lastSentMessage.current.text === text || 
+         (lastSentMessage.current.normalizedKey && 
+          (lastSentMessage.current.normalizedKey.includes(normalizedKey) || 
+           normalizedKey.includes(lastSentMessage.current.normalizedKey)))) && 
         lastSentMessage.current.targetLang === targetLang &&
-        now - lastSentMessage.current.timestamp < 3000) {
-      console.log('Duplicate message detected within 3 seconds - not sending again:', text.substring(0, 30));
+        now - lastSentMessage.current.timestamp < 5000) {
+      console.log('Duplicate message detected within 5 seconds - not sending again:', text.substring(0, 30));
       return;
     }
 
-    // Update last sent message
+    // Update last sent message with normalized key for better deduplication
     lastSentMessage.current = {
       text,
       timestamp: now,
-      targetLang
+      targetLang,
+      normalizedKey // Store the normalized key for fuzzy matching in future messages
     };
 
     console.log('Attempting to send message:', { 

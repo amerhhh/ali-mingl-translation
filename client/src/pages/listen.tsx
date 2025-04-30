@@ -305,19 +305,35 @@ export default function Listen() {
     if (text.trim()) {
       // Check for duplicate messages in listen mode
       if (isFinal) {
-        // Create a message fingerprint
-        const messageKey = `${text}`;
+        // Create a message fingerprint - normalize by trimming and taking the first 30 chars
+        // This helps catch cases where the same content is processed with minor differences
+        const normalizedText = text.trim().toLowerCase();
+        const messageKey = normalizedText.substring(0, 30);
         
         // Use a shared global cache for listen mode handler calls
         const processedHandlerCalls = (window as any).__listenModeHandlerCalls = (window as any).__listenModeHandlerCalls || {};
         
-        // Create a timestamp-based key to allow messages to be processed again after 10 seconds
-        // This prevents accidental blocking of legitimate repeated phrases
-        const timeKey = Math.floor(Date.now() / 10000); // Changes every 10 seconds
+        // Create a timestamp-based key to allow messages to be processed again after 15 seconds
+        // This prevents accidental blocking of legitimate repeated phrases while 
+        // providing longer protection against accidental duplicates
+        const timeKey = Math.floor(Date.now() / 15000); // Changes every 15 seconds
         const dedupKey = `${messageKey}-${timeKey}`;
         
-        // Check if we've seen this exact text recently in listen mode
-        if (processedHandlerCalls[dedupKey]) {
+        // Also check against the most recently processed text regardless of timeKey
+        // This provides stronger protection against rapid duplicates across time windows
+        const previousTexts = Object.keys(processedHandlerCalls)
+          .filter(key => key.endsWith(`-${timeKey-1}`)) // Check previous time window
+          .map(key => key.split('-')[0]);
+          
+        // Check if the current message is very similar to any recent message
+        const isDuplicate = processedHandlerCalls[dedupKey] || 
+          previousTexts.some(prevText => {
+            // If the previous text contains this text or vice versa, consider it a duplicate
+            return normalizedText.includes(prevText) || 
+                 (prevText.length > 15 && prevText.includes(normalizedText));
+          });
+        
+        if (isDuplicate) {
           console.log(`[Listen] BLOCKING duplicate transcript handler call:`, text.substring(0, 30) + "...");
           return;
         }

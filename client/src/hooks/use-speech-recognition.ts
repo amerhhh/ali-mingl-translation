@@ -393,7 +393,7 @@ export function useSpeechRecognition({ language = 'en-US', deviceId }: UseSpeech
       const isListenPage = window.location.pathname.includes('/listen');
       window.__webSpeechStreamingEnabled = isListenPage; // Only enable streaming in listen mode
       window.__webSpeechLastStreamingChunkTime = 0;
-      window.__webSpeechStreamingChunkInterval = 1000; // Process every 1 second in listen mode for baseline
+      window.__webSpeechStreamingChunkInterval = 3500; // Process every 3.5 seconds in listen mode for smoother output
       window.__webSpeechStreamingLastProcessedText = '';
       
       // Create a global tracking object for streaming performance monitoring
