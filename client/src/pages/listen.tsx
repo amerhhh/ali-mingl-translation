@@ -1197,8 +1197,8 @@ export default function Listen() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#E6F7FF] to-[#D6EBFA] p-4 md:p-6">
-      <div className="container mx-auto max-w-4xl">
+    <div className="min-h-screen bg-gradient-to-b from-[#E6F7FF] to-[#D6EBFA] p-2 sm:p-4 md:p-6">
+      <div className="container mx-auto max-w-4xl px-2 sm:px-4">
         {/* Main Navigation Tabs */}
         <div className="mb-6">
           <Tabs defaultValue="listen" className="w-full" onValueChange={value => {
@@ -1279,7 +1279,7 @@ export default function Listen() {
             </div>
           )}
 
-          <Card className="p-3 md:p-4 bg-blue-50 border-blue-200 shadow-sm">
+          <Card className="p-2 sm:p-3 md:p-4 bg-blue-50 border-blue-200 shadow-sm">
             <div className="space-y-3 md:space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 md:gap-4">
@@ -1398,7 +1398,7 @@ export default function Listen() {
           </Card>
 
           <div className="space-y-6">
-            <Card className="p-4 shadow-sm bg-blue-50 border-blue-200">
+            <Card className="p-2 sm:p-3 md:p-4 shadow-sm bg-blue-50 border-blue-200">
               <div className="space-y-4">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <h2 className="text-lg font-semibold">{uiText.translationSettings}</h2>
@@ -1554,32 +1554,7 @@ export default function Listen() {
             </div>
           </div>
           
-          {/* Debug logs section (only visible in development) */}
-          <Collapsible className="mt-4 border rounded-lg">
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" className="w-full flex justify-between p-2">
-                <span>Debug Logs (Audio Filter)</span>
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-3 bg-gray-50 max-h-60 overflow-auto text-xs font-mono">
-                {debugLogs.length === 0 ? (
-                  <p className="text-muted-foreground">No debug logs available.</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {debugLogs.map((log, i) => (
-                      <li key={i} className={
-                        log.includes("ALLOWING") ? "text-green-600" : 
-                        log.includes("BLOCKING") ? "text-red-600" : "text-gray-700"
-                      }>
-                        {log}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+          {/* Debug logs section removed - only logged to console */}
         </div>
       </div>
     </div>
