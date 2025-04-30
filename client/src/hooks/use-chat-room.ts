@@ -109,7 +109,12 @@ export function useChatRoom(roomId: string): ChatRoom {
   const MAX_RECONNECT_ATTEMPTS = 5;
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const playedMessageIds = useRef<Set<string>>(new Set());
-  const lastSentMessage = useRef<{text: string, timestamp: number, targetLang: string} | null>(null);
+  const lastSentMessage = useRef<{
+    text: string, 
+    timestamp: number, 
+    targetLang: string,
+    normalizedKey?: string
+  } | null>(null);
 
   // Load stored messages and restore user identity
   const loadStoredMessages = useCallback(async () => {
@@ -454,16 +459,21 @@ export function useChatRoom(roomId: string): ChatRoom {
 
     // Check for duplicate messages within a short timeframe (5 seconds)
     const now = Date.now();
-    // Create normalized message fingerprint
+    // Create normalized message fingerprint for better matching
     const normalizedText = text.trim().toLowerCase();
     const normalizedKey = normalizedText.substring(0, 50);
     
+    // Check for exact match or fuzzy match using normalized text
     if (lastSentMessage.current && 
         (lastSentMessage.current.text === text || 
-         (lastSentMessage.current.normalizedKey && 
+        // Simple check if message is already processed
+        (lastSentMessage.current.normalizedKey && normalizedKey &&
+          // Check if either normalized key contains the other 
           (lastSentMessage.current.normalizedKey.includes(normalizedKey) || 
            normalizedKey.includes(lastSentMessage.current.normalizedKey)))) && 
+        // Make sure we're comparing the right target language
         lastSentMessage.current.targetLang === targetLang &&
+        // Only check within 5 second window
         now - lastSentMessage.current.timestamp < 5000) {
       console.log('Duplicate message detected within 5 seconds - not sending again:', text.substring(0, 30));
       return;
@@ -474,7 +484,7 @@ export function useChatRoom(roomId: string): ChatRoom {
       text,
       timestamp: now,
       targetLang,
-      normalizedKey // Store the normalized key for fuzzy matching in future messages
+      normalizedKey
     };
 
     console.log('Attempting to send message:', { 
