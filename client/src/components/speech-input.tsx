@@ -299,7 +299,7 @@ export function SpeechInput({
       // Global variables for the streaming system
       (window as any).__webSpeechStreamingEnabled = true;
       (window as any).__webSpeechLastStreamingChunkTime = Date.now();
-      (window as any).__webSpeechStreamingChunkInterval = 3500; // Increased to 3.5 seconds to prevent voice lag and overlap
+      (window as any).__webSpeechStreamingChunkInterval = 2500; // 2.5 seconds provides a good balance between responsiveness and smoothness
       (window as any).__webSpeechStreamingLastProcessedText = '';
       (window as any).__webSpeechStreamingProcessingChunk = false;
       (window as any).__webSpeechStreamingLastChunkTime = 0;
@@ -641,8 +641,8 @@ export function SpeechInput({
           messageFingerprint = trimmedText;
         }
         
-        // Use longer deduplication window to prevent repetition (60 seconds)
-        const deduplicationWindow = 60000;
+        // Use moderate deduplication window to prevent repetition while allowing new content (30 seconds)
+        const deduplicationWindow = 30000; // 30 seconds instead of 60
         const now = Date.now();
         
         // Global persistent storage for similar message tracking across component lifecycle
@@ -651,13 +651,31 @@ export function SpeechInput({
         // Check if we've processed this exact fingerprint recently
         const matchingFingerprint = Object.keys(processedFingerprints).find(fp => {
           // Check if the fingerprint is similar and was processed recently
+          // Only consider exact matches for short texts
+          const isShortText = messageFingerprint.length < 10 || fp.length < 10;
+          
+          // For very short texts like single words, only use exact matching
+          if (isShortText) {
+            return fp === messageFingerprint && (now - processedFingerprints[fp] < deduplicationWindow);
+          }
+          
+          // For longer texts, be much more strict with partial matching
+          // Only consider substantial overlap (60%+ of the shorter text)
+          const minLength = Math.min(fp.length, messageFingerprint.length);
+          const requiredOverlapChars = Math.floor(minLength * 0.6); // At least 60% overlap
+          
+          // Make sure we're comparing at least 20 characters minimum
+          const comparisonLength = Math.max(20, requiredOverlapChars);
+          
+          // Direct match or very substantial overlap
           const isSimilar = (
             // Direct match
             fp === messageFingerprint ||
-            // Or contains significant overlap (3+ word phrases)
-            (fp.length > 15 && messageFingerprint.length > 15 && 
-             (fp.includes(messageFingerprint.substring(0, 15)) || 
-              messageFingerprint.includes(fp.substring(0, 15))))
+            
+            // For longer texts (20+ chars), require at least 60% overlap
+            (fp.length > 20 && messageFingerprint.length > 20 && 
+             (fp.includes(messageFingerprint.substring(0, comparisonLength)) || 
+              messageFingerprint.includes(fp.substring(0, comparisonLength))))
           );
           
           // Only consider it a match if it's recent enough
