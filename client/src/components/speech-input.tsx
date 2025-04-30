@@ -84,6 +84,12 @@ export function SpeechInput({
       window.__lastTranslationText.target = '';
     }
     
+    // Also clean up any legacy fingerprinting that might still be in memory
+    (window as any).__tempFingerprints = {};
+    (window as any).__tempTranslationFingerprints = {};
+    (window as any).__webSpeechProcessedMessages = {};
+    (window as any).__lastSpeechStopTime = 0;
+    
     console.log("[WebSpeech] Reset all deduplication tracking");
   }, []);
   
@@ -444,28 +450,10 @@ export function SpeechInput({
             
             // For listen mode, implement stricter deduplication
             if (isListenMode) {
-              // Create a unique fingerprint for this message
-              const messageFingerprint = `${message.text}-${message.translatedText}`;
+              // We no longer need this extra deduplication step since we have 
+              // a more reliable timestamp-based check later in the code
               
-              // Initialize or get the global deduplication registry
-              const webSpeechProcessed = (window as any).__webSpeechProcessedMessages = 
-                (window as any).__webSpeechProcessedMessages || {};
-              
-              // Add a time window-based key so we can reprocess identical messages after some time
-              const timeWindow = Math.floor(Date.now() / 30000); // 30-second window
-              const dedupKey = `${messageFingerprint}-${timeWindow}`;
-              
-              // Check if we've already processed this message in the current time window
-              if (webSpeechProcessed[dedupKey]) {
-                console.log(`[WebSpeech] BLOCKING duplicate message in listen mode:`, 
-                  message.text.substring(0, 30) + "...");
-                return;
-              }
-              
-              // Mark this message as processed for this time window
-              webSpeechProcessed[dedupKey] = true;
-              
-              console.log(`[WebSpeech] Processing message in listen mode with dedupKey`);
+              console.log(`[WebSpeech] Processing message in listen mode`);
             }
             
             // Update the global OpenAI transcription object for UI display
