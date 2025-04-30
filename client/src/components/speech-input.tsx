@@ -506,28 +506,54 @@ export function SpeechInput({
                 messageFingerprint = `${trimmedText}|${trimmedTranslation.substring(0, 15)}`;
               }
               
-              // Use a longer deduplication window to prevent repetition (60 seconds)
-              const deduplicationWindow = 60000;
+              // Use a moderate deduplication window to prevent repetition (30 seconds)
+              const deduplicationWindow = 30000; // 30 seconds is a good balance
               const now = Date.now();
               
               // Global persistent storage for processed messages
               const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
               
-              // Check if we've seen this message or a similar one recently
+              // Debug note: this processes translations, not just speech inputs
+              console.log(`[WebSpeech] Checking translation fingerprint: "${messageFingerprint.substring(0, 30)}..." against ${Object.keys(processedMessages).length} existing fingerprints`);
+              
+              // Use a more reliable matching algorithm for translation deduplication
               const matchingKey = Object.keys(processedMessages).find(key => {
-                // Check if the fingerprint is similar
-                const isSimilar = (
-                  // Direct match
-                  key === messageFingerprint ||
-                  // Or contains significant overlap in text part (before the | symbol)
-                  (key.split('|')[0].length > 10 && 
-                   messageFingerprint.split('|')[0].length > 10 &&
-                   (key.split('|')[0].includes(messageFingerprint.split('|')[0].substring(0, 10)) ||
-                    messageFingerprint.split('|')[0].includes(key.split('|')[0].substring(0, 10))))
-                );
+                // Always require exact match for short messages (under 5 chars)
+                if (key.length < 5 || messageFingerprint.length < 5) {
+                  return key === messageFingerprint && (now - processedMessages[key] < 10000); // 10 second window
+                }
                 
-                // Only consider it a match if processed recently
-                return isSimilar && (now - processedMessages[key] < deduplicationWindow);
+                // For messages with a pipe separator (text|translation format)
+                const keyParts = key.split('|');
+                const msgParts = messageFingerprint.split('|');
+                
+                // If either doesn't have the expected format, require exact match
+                if (keyParts.length < 2 || msgParts.length < 2) {
+                  return key === messageFingerprint && (now - processedMessages[key] < 30000);
+                }
+                
+                // Extract text parts (before pipe) and translation parts (after pipe)
+                const keyText = keyParts[0];
+                const msgText = msgParts[0];
+                
+                // For very short texts, only do exact matching with a shorter window
+                if (keyText.length < 10 || msgText.length < 10) {
+                  return key === messageFingerprint && (now - processedMessages[key] < 15000);
+                }
+                
+                // Direct exact match - longest window
+                if (key === messageFingerprint) {
+                  return (now - processedMessages[key] < deduplicationWindow); // Full window
+                }
+                
+                // For longer texts, check if they're substantively the same message
+                // by comparing both the original text and at least part of the translation
+                
+                // Text part must be exactly the same (this is the original speech)
+                const sameOriginalText = keyText === msgText;
+                
+                // Time window is much shorter for this case (15 seconds)
+                return sameOriginalText && (now - processedMessages[key] < 15000);
               });
               
               if (matchingKey) {
@@ -649,37 +675,80 @@ export function SpeechInput({
         const processedFingerprints = (window as any).__listenModeFingerprints = (window as any).__listenModeFingerprints || {};
         
         // Check if we've processed this exact fingerprint recently
+        // For debugging purposes - log all fingerprints
+        console.log(`[WebSpeech] Checking fingerprint: "${messageFingerprint}" against ${Object.keys(processedFingerprints).length} existing fingerprints`);
+        
+        // A much more careful matching algorithm to avoid blocking valid content
         const matchingFingerprint = Object.keys(processedFingerprints).find(fp => {
-          // Check if the fingerprint is similar and was processed recently
-          // Only consider exact matches for short texts
-          const isShortText = messageFingerprint.length < 10 || fp.length < 10;
-          
-          // For very short texts like single words, only use exact matching
-          if (isShortText) {
-            return fp === messageFingerprint && (now - processedFingerprints[fp] < deduplicationWindow);
+          // If either fingerprint is extremely short (1-2 chars), always require exact match
+          if (messageFingerprint.length <= 2 || fp.length <= 2) {
+            return messageFingerprint === fp && (now - processedFingerprints[fp] < deduplicationWindow);
           }
           
-          // For longer texts, be much more strict with partial matching
-          // Only consider substantial overlap (60%+ of the shorter text)
+          // For very short texts (3-10 chars), ONLY do exact matching with a short window
+          const isVeryShortText = messageFingerprint.length < 10 || fp.length < 10;
+          if (isVeryShortText) {
+            // For short text, use a much shorter deduplication window (10 seconds instead of 30)
+            return messageFingerprint === fp && (now - processedFingerprints[fp] < 10000);
+          }
+          
+          // For medium-length texts (10-20 chars), be very cautious
+          const isMediumText = messageFingerprint.length < 20 || fp.length < 20;
+          if (isMediumText) {
+            // Medium texts must be exact matches and use a moderate deduplication window
+            return messageFingerprint === fp && (now - processedFingerprints[fp] < 15000);
+          }
+          
+          // For longer texts (20+ chars), we can be more flexible but still require high overlap
+          
+          // Word count heuristic - rough approximation by counting spaces + 1
+          const fpWordCount = (fp.match(/\s+/g) || []).length + 1;
+          const msgWordCount = (messageFingerprint.match(/\s+/g) || []).length + 1;
+          
+          // If word counts are very different (more than 50% difference), 
+          // these are likely different statements
+          if (Math.abs(fpWordCount - msgWordCount) > Math.min(fpWordCount, msgWordCount) * 0.5) {
+            return false;
+          }
+          
+          // Calculate required character overlap based on text length
+          // For longer texts, we require at least 75% character overlap for safety
           const minLength = Math.min(fp.length, messageFingerprint.length);
-          const requiredOverlapChars = Math.floor(minLength * 0.6); // At least 60% overlap
+          const requiredOverlapChars = Math.floor(minLength * 0.75);
           
-          // Make sure we're comparing at least 20 characters minimum
-          const comparisonLength = Math.max(20, requiredOverlapChars);
+          // Direct match condition
+          if (fp === messageFingerprint) {
+            return (now - processedFingerprints[fp] < deduplicationWindow);
+          }
           
-          // Direct match or very substantial overlap
-          const isSimilar = (
-            // Direct match
-            fp === messageFingerprint ||
-            
-            // For longer texts (20+ chars), require at least 60% overlap
-            (fp.length > 20 && messageFingerprint.length > 20 && 
-             (fp.includes(messageFingerprint.substring(0, comparisonLength)) || 
-              messageFingerprint.includes(fp.substring(0, comparisonLength))))
+          // Complete substring check (one is entirely contained within the other)
+          // This can catch cases where one phrase is just an extended version of another
+          if (fp.includes(messageFingerprint) || messageFingerprint.includes(fp)) {
+            return (now - processedFingerprints[fp] < deduplicationWindow);
+          }
+          
+          // If no direct match, use a much stricter matching approach
+          // that looks for substantial overlap at the beginning, middle or end
+          
+          // Check for significant beginning match
+          const beginLength = Math.min(20, Math.floor(minLength * 0.4));
+          const hasBeginningMatch = (
+            beginLength > 10 &&
+            fp.substring(0, beginLength) === messageFingerprint.substring(0, beginLength) 
           );
           
-          // Only consider it a match if it's recent enough
-          return isSimilar && (now - processedFingerprints[fp] < deduplicationWindow);
+          // Check for significant ending match
+          const hasEndingMatch = (
+            beginLength > 10 &&
+            fp.substring(fp.length - beginLength) === 
+            messageFingerprint.substring(messageFingerprint.length - beginLength)
+          );
+          
+          // Consider similar only if there's substantial structured overlap
+          // AND it was processed very recently (use stricter time window for partial matches)
+          const isStructuredMatch = (hasBeginningMatch && hasEndingMatch);
+          
+          return isStructuredMatch && (now - processedFingerprints[fp] < 20000);
         });
         
         if (matchingFingerprint) {
