@@ -73,6 +73,20 @@ export function SpeechInput({
   // Reference to track previous language - MUST be created at component level
   const prevLanguageRef = useRef(debouncedLanguage);
   
+  // Helper function to reset all deduplication tracking
+  const resetDuplicationTracking = useCallback(() => {
+    // Reset our timestamp tracking system
+    window.__lastProcessedUtteranceTime = 0;
+    window.__lastUtteranceText = '';
+    window.__lastProcessedTranslationTime = 0;
+    if (window.__lastTranslationText) {
+      window.__lastTranslationText.source = '';
+      window.__lastTranslationText.target = '';
+    }
+    
+    console.log("[WebSpeech] Reset all deduplication tracking");
+  }, []);
+  
   // WebSpeech API hook
   const { 
     isListening: isListeningWebSpeech, 
@@ -341,6 +355,9 @@ export function SpeechInput({
       if (window.__speechInputTracking) {
         window.__speechInputTracking.preventLanguageEffectTrigger = true;
       }
+      
+      // Reset the deduplication tracking whenever language changes
+      resetDuplicationTracking();
       
       setIsResetting(true);
       
@@ -748,6 +765,9 @@ export function SpeechInput({
     if (window.__webSpeechStreamingProcessingChunk) {
       window.__webSpeechStreamingProcessingChunk = false;
     }
+    
+    // Reset all deduplication tracking for a clean slate
+    resetDuplicationTracking();
     
     // Set debug flag for more detailed logging on next operation
     (window as any).__debugSpeech = true;
