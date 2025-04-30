@@ -1,0 +1,104 @@
+Created remote audio element for OpenAI audio (MUTED for listen mode)
+Console.js:61 Global speech tracking updated: 
+Object
+Console.js:61 Language prop changed: en -> en
+Console.js:61 Setting up WebSpeech streaming for Listen mode
+Console.js:61 Speech recognition state updated: 
+      useOpenAI: false
+      isListeningOpenAI: false
+      isListeningWebSpeech: false
+      combined isListening: false
+      isResetting: false
+      isConnecting: false
+    
+Console.js:61 [OpenAI WebRTC] Connection cleaned up successfully
+Console.js:61 WebSocket connected successfully
+Console.js:61 Sending join message: 
+Object
+Console.js:61 Received message: 
+Object
+Console.js:61 Successfully joined room: DSY
+Console.js:61 Received room history: 
+Array(0)
+Console.js:61 Translation response: 
+Object
+Console.js:61 handleToggle called - current state: 
+Object
+Console.js:61 Starting microphone ON - using WebSpeech API
+Console.js:61 Checking microphone access before starting recognition
+Console.js:61 Starting WebSpeech recognition (attempt 1/2)
+Console.js:61 Initializing WebSpeech streaming functionality
+Console.js:61 WebSpeech starting at 1746018466446, marked as active globally
+Console.js:61 WebSpeech streaming enabled, chunk interval: 3500ms
+Console.js:61 Created new speech recognition instance with language: en-US
+Console.js:61 Started speech recognition
+Console.js:61 Successfully started WebSpeech recognition
+Console.js:61 Global speech tracking updated: 
+Object
+Console.js:61 Speech recognition state updated: 
+      useOpenAI: false
+      isListeningOpenAI: false
+      isListeningWebSpeech: true
+      combined isListening: true
+      isResetting: false
+      isConnecting: false
+    
+Console.js:61 Speech recognition started in language: en-US
+Console.js:61 [WebSpeech Streaming] Processing chunk with 0 final chars, 3 interim chars after 1746018469.7s
+Console.js:61 
+Object
+Console.js:61 [WebSpeech] Checking fingerprint: "hey" against 0 existing fingerprints
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: hey...
+Console.js:61 WebSpeech: Stored source text for translation matching: hey
+Console.js:61 [Listen] First time handling this transcript in current time window: hey...
+Console.js:61 Attempting to send message: 
+Object
+Console.js:61 Sending message through WebSocket: 
+Object
+Console.js:61 No OpenAI translation found for immediate playback
+Console.js:61 [WebSpeech] Clearing recognition buffer to prevent audio feedback...
+Console.js:61 Received message: 
+Object
+Console.js:61 Adding new message to chat: 
+Object
+Console.js:61 Received translation for WebSpeech message: مرحبًا
+Console.js:61 [WebSpeech] Processing message in listen mode with dedupKey
+Console.js:61 WEBSPEECH TRANSLATION RECEIVED: 
+Object
+Console.js:61  WebSpeech Translation Status  Source text: hey Translation: مرحبًا Both will be displayed in chat with the Translation label
+Console.js:61 [WebSpeech] Checking translation fingerprint: "hey|مرحبًا..." against 0 existing fingerprints
+Console.js:61 [WebSpeech] Processing translation in listen mode: "hey..." -> "مرحبًا..."
+Console.js:61 [Listen] BLOCKING duplicate transcript handler call: hey...
+Console.js:61 Listen page: New message detected, checking for queue: 
+Object
+Console.js:61 Message Queue: Added message to queue (1 total): مرحبًا...
+Console.js:61 Message Queue: Playing message 1/1: مرحبًا...
+Console.js:61 Message Queue: Using special RTL handling for this message
+Console.js:61 Added text to speech queue. Queue length: 1
+Console.js:61 Allowing audio playback in Listen mode for real-time translation
+Console.js:61 Speech check for auto-play: isChat=false, isOpenAI=undefined, isManual=false, playTargetEnabled=false
+Console.js:61 Arabic text detected, using ar-SA language code
+Console.js:61 Available voices: 
+Array(24)
+Console.js:61 Selected voice: Microsoft Naayf - Arabic (Saudi) for language: ar-SA
+Console.js:61 [DEBUG] 🔊 Force playing this utterance (unblocked by force flag)
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "مرحبًا..." (lang: ar-SA)
+Console.js:61 [DEBUG] Speech request - text: "مرحبًا..." lang: ar-sa
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "مرحبًا..." (lang: ar-SA)
+Console.js:61 Message Queue: Setting completion timeout for 1120ms
+Console.js:61 Speech started
+Console.js:61 Speech interrupted/canceled (attempt #1), attempting recovery...
+Console.js:61 Speech synthesis error: 
+SpeechSynthesisErrorEvent
+Console.js:61 [WebSpeech] Clearing recognition buffer after translation processed...
+Console.js:61 [DEBUG] Speech request - text: "مرحبًا..." lang: ar-sa
+Console.js:61 [DEBUG] ⚠️ Detected duplicate utterance within 1 second, possibly source language repetition
+Console.js:61 [DEBUG] ✓ ALLOWING speech with text "مرحبًا..." (lang: ar-SA)
+Console.js:61 Recovery attempt #1 with rate 0.8999999761581421, text length: 6
+Console.js:61 [WebSpeech Streaming] Processing chunk with 0 final chars, 21 interim chars after 2.8s
+Console.js:61 
+Object
+Console.js:61 [WebSpeech] Checking fingerprint: "Bachelor in computer" against 1 existing fingerprints
+Console.js:61 [WebSpeech] Processing new transcript in listen mode: Bachelor in computer...
+Console.js:61 WebSpeech: Stored source text for translation matching: Bachelor in computer
+﻿

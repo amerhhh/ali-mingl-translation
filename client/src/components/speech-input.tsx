@@ -26,10 +26,10 @@ declare global {
       lastToggleTime: number;
       preventLanguageEffectTrigger: boolean;
     };
-    __tempFingerprints?: Record<string, number>;
-    __tempTranslationFingerprints?: Record<string, number>;
-    __lastSpeechStopTime?: number;
-    __lastUserInteractionTime?: number;
+    __lastProcessedUtteranceTime?: number;
+    __lastUtteranceText?: string;
+    __lastProcessedTranslationTime?: number;
+    __lastTranslationText?: { source: string, target: string };
   }
 }
 
@@ -491,114 +491,52 @@ export function SpeechInput({
             
             // For listen mode, use persistent tracking to completely prevent duplication
             if (isListenPage) {
-              // Enhanced duplicate detection for WebSocket messages
-              // Create a more robust fingerprint that captures message essence
-              let messageFingerprint = '';
-              const trimmedText = message.text.trim();
-              const trimmedTranslation = message.translatedText.trim();
-              
-              // Create a hybrid fingerprint using both text and translation
-              if (trimmedText.length > 30) {
-                // For longer text, create a fingerprint from parts of text and translation
-                const textBeginning = trimmedText.substring(0, 10);
-                const textEnd = trimmedText.substring(trimmedText.length - 10);
-                const transBeginning = trimmedTranslation.substring(0, 10);
-                
-                messageFingerprint = `${textBeginning}...${textEnd}|${transBeginning}`;
-              } else {
-                // For shorter text, use the full text and part of translation
-                messageFingerprint = `${trimmedText}|${trimmedTranslation.substring(0, 15)}`;
-              }
-              
-              // Use a very short deduplication window to only catch immediate duplicates
-              const deduplicationWindow = 3000; // Just 3 seconds for translations - just enough to prevent duplicates
+              // COMPLETE REDESIGN: Instead of using complex fingerprinting,
+              // use a simple timestamp-based approach for translations too
               const now = Date.now();
+              const trimmedText = message.text.trim();
+              const trimmedTranslation = message.translatedText ? message.translatedText.trim() : '';
               
-              // Use temporary in-memory storage that doesn't persist
-              if (!(window as any).__tempTranslationFingerprints) {
-                (window as any).__tempTranslationFingerprints = {};
+              // Initialize a tracker for the last processed translation time
+              if (!(window as any).__lastProcessedTranslationTime) {
+                (window as any).__lastProcessedTranslationTime = 0;
               }
               
-              // Use very ephemeral storage
-              let processedMessages = (window as any).__tempTranslationFingerprints;
-              
-              // Clear all fingerprints as soon as user interaction happens
-              if ((window as any).__lastUserInteractionTime) {
-                const timeSinceUserInteraction = now - (window as any).__lastUserInteractionTime;
-                
-                // If user interacted more than 2 seconds ago, clear all fingerprints
-                if (timeSinceUserInteraction > 2000) {
-                  processedMessages = (window as any).__tempTranslationFingerprints = {};
-                  console.log("[WebSpeech] Cleared all translation fingerprints due to user interaction");
-                }
+              // Initialize a tracker for the last translation text
+              if (!(window as any).__lastTranslationText) {
+                (window as any).__lastTranslationText = { source: '', target: '' };
               }
               
-              // Very aggressively clean up old entries (older than just 3 seconds)
-              const cleanupTime = now - 3000;
-              Object.keys(processedMessages).forEach(key => {
-                if (processedMessages[key] < cleanupTime) {
-                  delete processedMessages[key];
-                }
-              });
+              // Get the time since we last processed a translation
+              const timeSinceLastTranslation = now - (window as any).__lastProcessedTranslationTime;
               
-              // Debug note: this processes translations, not just speech inputs
-              console.log(`[WebSpeech] Checking translation fingerprint: "${messageFingerprint.substring(0, 30)}..." against ${Object.keys(processedMessages).length} existing fingerprints`);
+              // Simple logic - if both the source text and translation match exactly what we just processed,
+              // and it was very recent (within 2 seconds), then it's likely a duplicate
+              const isDuplicate = 
+                trimmedText === (window as any).__lastTranslationText.source && 
+                trimmedTranslation === (window as any).__lastTranslationText.target &&
+                timeSinceLastTranslation < 2000; // 2 seconds
+                
+              // For debugging - log what's happening
+              console.log(`[WebSpeech] Processing translation: "${trimmedText.substring(0, 30)}..." → "${trimmedTranslation.substring(0, 30)}..."`);
+              console.log(`[WebSpeech] Time since last translation: ${timeSinceLastTranslation}ms`);
               
-              // Use a more reliable matching algorithm for translation deduplication
-              const matchingKey = Object.keys(processedMessages).find(key => {
-                // Always require exact match for short messages (under 5 chars)
-                if (key.length < 5 || messageFingerprint.length < 5) {
-                  return key === messageFingerprint && (now - processedMessages[key] < 10000); // 10 second window
-                }
-                
-                // For messages with a pipe separator (text|translation format)
-                const keyParts = key.split('|');
-                const msgParts = messageFingerprint.split('|');
-                
-                // If either doesn't have the expected format, require exact match
-                if (keyParts.length < 2 || msgParts.length < 2) {
-                  return key === messageFingerprint && (now - processedMessages[key] < 30000);
-                }
-                
-                // Extract text parts (before pipe) and translation parts (after pipe)
-                const keyText = keyParts[0];
-                const msgText = msgParts[0];
-                
-                // For very short texts, only do exact matching with a shorter window
-                if (keyText.length < 10 || msgText.length < 10) {
-                  return key === messageFingerprint && (now - processedMessages[key] < 15000);
-                }
-                
-                // Direct exact match - longest window
-                if (key === messageFingerprint) {
-                  return (now - processedMessages[key] < deduplicationWindow); // Full window
-                }
-                
-                // For longer texts, check if they're substantively the same message
-                // by comparing both the original text and at least part of the translation
-                
-                // Text part must be exactly the same (this is the original speech)
-                const sameOriginalText = keyText === msgText;
-                
-                // Time window is much shorter for this case (15 seconds)
-                return sameOriginalText && (now - processedMessages[key] < 15000);
-              });
-              
-              if (matchingKey) {
-                console.log(`[WebSpeech] BLOCKING similar translation in listen mode:`, message.text.substring(0, 30) + "...");
-                console.log(`[WebSpeech] Matched with existing key: ${matchingKey.substring(0, 30)}...`);
+              // If it's an exact duplicate within a short timeframe, skip it
+              if (isDuplicate) {
+                console.log(`[WebSpeech] Skipping exact duplicate translation within 2 seconds`);
                 return;
               }
               
-              // Mark this as processed with current timestamp
-              processedMessages[messageFingerprint] = now;
-              // No longer using sessionStorage for translation fingerprints either
-              // This makes them fully ephemeral and prevents issues across sessions
+              // Otherwise, update our tracking and proceed
+              (window as any).__lastProcessedTranslationTime = now;
+              (window as any).__lastTranslationText = { 
+                source: trimmedText, 
+                target: trimmedTranslation 
+              };
               console.log(`[WebSpeech] Processing translation in listen mode: "${trimmedText.substring(0, 30)}..." -> "${trimmedTranslation.substring(0, 30)}..."`);
               
               // Reset WebSpeech recognition state to prevent picking up the translated audio
               // This helps stop the microphone from capturing its own output
-              const isListenPage = window.location.pathname.includes('/listen');
               if (isListenPage) {
                 setTimeout(() => {
                   if (isListening && !useOpenAI) {
@@ -701,151 +639,43 @@ export function SpeechInput({
       
       // For listen mode, use persistent tracking to completely prevent duplication
       if (isListenPage) {
-        // Create a message fingerprint
-        // Enhanced duplicate detection to prevent repetitive speech
-        // Create a more unique fingerprint that captures the essence of the message
-        let messageFingerprint = '';
+        // COMPLETE REDESIGN: Instead of trying to prevent duplicates through fingerprinting,
+        // we'll use a timestamp-based approach that's much simpler and more reliable
+        const now = Date.now();
         const trimmedText = transcriptResult.finalText.trim();
         
-        if (trimmedText.length > 30) {
-          // For longer text, create a more robust fingerprint from multiple parts of the text
-          const beginning = trimmedText.substring(0, 10);
-          const middle = trimmedText.substring(Math.floor(trimmedText.length / 2) - 5, Math.floor(trimmedText.length / 2) + 5);
-          const end = trimmedText.substring(trimmedText.length - 10);
-          messageFingerprint = `${beginning}...${middle}...${end}`;
-        } else {
-          // For shorter text, just use the entire text
-          messageFingerprint = trimmedText;
+        // Initialize a tracker for the last processed utterance time
+        if (!(window as any).__lastProcessedUtteranceTime) {
+          (window as any).__lastProcessedUtteranceTime = 0;
         }
         
-        // Use extremely short deduplication window to only catch immediate duplicates
-        // but allow normal conversation to continue
-        const deduplicationWindow = 5000; // Only 5 seconds - just enough to catch immediate duplicates
-        const now = Date.now();
-        
-        // Use only temporary in-memory storage that's cleared when the component unmounts
-        // Don't store in sessionStorage to avoid persisting across page refreshes
-        if (!(window as any).__tempFingerprints) {
-          (window as any).__tempFingerprints = {};
+        // Initialize a tracker for the last utterance text for logging
+        if (!(window as any).__lastUtteranceText) {
+          (window as any).__lastUtteranceText = '';
         }
         
-        // Load from temporary storage - much more ephemeral 
-        let processedFingerprints = (window as any).__tempFingerprints;
+        // Get the time since we last processed an utterance
+        const timeSinceLastUtterance = now - (window as any).__lastProcessedUtteranceTime;
         
-        // Clear all fingerprints as soon as speech stops or restarts
-        // This ensures we don't block legitimate new speech
-        if ((window as any).__lastSpeechStopTime) {
-          const timeSinceSpeechStopped = now - (window as any).__lastSpeechStopTime;
+        // Simple logic - if the exact same text was processed very recently (within 1.5 seconds), 
+        // and the speech recognition is sending the exact same final text, it's likely a duplicate
+        const isDuplicate = 
+          trimmedText === (window as any).__lastUtteranceText && 
+          timeSinceLastUtterance < 1500; // 1.5 seconds
           
-          // If speech stopped more than 2 seconds ago, clear all fingerprints
-          if (timeSinceSpeechStopped > 2000) {
-            processedFingerprints = (window as any).__tempFingerprints = {};
-            console.log("[WebSpeech] Cleared all fingerprints due to speech break");
-          }
-        }
+        // For debugging - always log what we're doing but be very clear
+        console.log(`[WebSpeech] Processing utterance: "${trimmedText.substring(0, 30)}..." (${trimmedText.length} chars)`);
+        console.log(`[WebSpeech] Time since last utterance: ${timeSinceLastUtterance}ms, Last text: "${((window as any).__lastUtteranceText || '').substring(0, 30)}..."`);
         
-        // Aggressively clean up old fingerprints (older than just 5 seconds)
-        const cleanupTime = now - 5000; 
-        Object.keys(processedFingerprints).forEach(key => {
-          if (processedFingerprints[key] < cleanupTime) {
-            delete processedFingerprints[key];
-          }
-        });
-        
-        // Track when speech starts and stops to help with cleanup
-        if (!transcriptResult.finalText) {
-          (window as any).__lastSpeechStopTime = now;
-        }
-        
-        // No longer storing in session storage - using only in-memory storage
-        // to make fingerprints completely ephemeral
-        
-        // Check if we've processed this exact fingerprint recently
-        // For debugging purposes - log all fingerprints
-        console.log(`[WebSpeech] Checking fingerprint: "${messageFingerprint}" against ${Object.keys(processedFingerprints).length} existing fingerprints`);
-        
-        // A much more careful matching algorithm to avoid blocking valid content
-        const matchingFingerprint = Object.keys(processedFingerprints).find(fp => {
-          // If either fingerprint is extremely short (1-2 chars), always require exact match
-          if (messageFingerprint.length <= 2 || fp.length <= 2) {
-            return messageFingerprint === fp && (now - processedFingerprints[fp] < deduplicationWindow);
-          }
-          
-          // For very short texts (3-10 chars), ONLY do exact matching with a short window
-          const isVeryShortText = messageFingerprint.length < 10 || fp.length < 10;
-          if (isVeryShortText) {
-            // For short text, use a much shorter deduplication window (10 seconds instead of 30)
-            return messageFingerprint === fp && (now - processedFingerprints[fp] < 10000);
-          }
-          
-          // For medium-length texts (10-20 chars), be very cautious
-          const isMediumText = messageFingerprint.length < 20 || fp.length < 20;
-          if (isMediumText) {
-            // Medium texts must be exact matches and use a moderate deduplication window
-            return messageFingerprint === fp && (now - processedFingerprints[fp] < 15000);
-          }
-          
-          // For longer texts (20+ chars), we can be more flexible but still require high overlap
-          
-          // Word count heuristic - rough approximation by counting spaces + 1
-          const fpWordCount = (fp.match(/\s+/g) || []).length + 1;
-          const msgWordCount = (messageFingerprint.match(/\s+/g) || []).length + 1;
-          
-          // If word counts are very different (more than 50% difference), 
-          // these are likely different statements
-          if (Math.abs(fpWordCount - msgWordCount) > Math.min(fpWordCount, msgWordCount) * 0.5) {
-            return false;
-          }
-          
-          // Calculate required character overlap based on text length
-          // For longer texts, we require at least 75% character overlap for safety
-          const minLength = Math.min(fp.length, messageFingerprint.length);
-          const requiredOverlapChars = Math.floor(minLength * 0.75);
-          
-          // Direct match condition
-          if (fp === messageFingerprint) {
-            return (now - processedFingerprints[fp] < deduplicationWindow);
-          }
-          
-          // Complete substring check (one is entirely contained within the other)
-          // This can catch cases where one phrase is just an extended version of another
-          if (fp.includes(messageFingerprint) || messageFingerprint.includes(fp)) {
-            return (now - processedFingerprints[fp] < deduplicationWindow);
-          }
-          
-          // If no direct match, use a much stricter matching approach
-          // that looks for substantial overlap at the beginning, middle or end
-          
-          // Check for significant beginning match
-          const beginLength = Math.min(20, Math.floor(minLength * 0.4));
-          const hasBeginningMatch = (
-            beginLength > 10 &&
-            fp.substring(0, beginLength) === messageFingerprint.substring(0, beginLength) 
-          );
-          
-          // Check for significant ending match
-          const hasEndingMatch = (
-            beginLength > 10 &&
-            fp.substring(fp.length - beginLength) === 
-            messageFingerprint.substring(messageFingerprint.length - beginLength)
-          );
-          
-          // Consider similar only if there's substantial structured overlap
-          // AND it was processed very recently (use stricter time window for partial matches)
-          const isStructuredMatch = (hasBeginningMatch && hasEndingMatch);
-          
-          return isStructuredMatch && (now - processedFingerprints[fp] < 20000);
-        });
-        
-        if (matchingFingerprint) {
-          console.log(`[WebSpeech] BLOCKING similar transcript in listen mode:`, transcriptResult.finalText.substring(0, 30) + "...");
-          console.log(`[WebSpeech] Matched fingerprint: ${matchingFingerprint.substring(0, 30)}...`);
+        // If it's an exact duplicate within a very short timeframe, skip it
+        if (isDuplicate) {
+          console.log(`[WebSpeech] Skipping exact duplicate utterance within 1.5 seconds`);
           return;
         }
         
-        // Mark this fingerprint as processed with current timestamp
-        processedFingerprints[messageFingerprint] = now;
-        // No longer storing in session storage - completely ephemeral
+        // Otherwise, update our tracking and proceed
+        (window as any).__lastProcessedUtteranceTime = now;
+        (window as any).__lastUtteranceText = trimmedText;
         console.log(`[WebSpeech] Processing new transcript in listen mode: ${trimmedText.substring(0, 30)}...`);
         
         // In listen mode, it's important to clear the recognition after sending
