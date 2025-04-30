@@ -510,8 +510,25 @@ export function SpeechInput({
               const deduplicationWindow = 30000; // 30 seconds is a good balance
               const now = Date.now();
               
-              // Global persistent storage for processed messages
-              const processedMessages = (window as any).__listenModeProcessedMessages = (window as any).__listenModeProcessedMessages || {};
+              // Local session-based storage for processed translation messages
+              // Using sessionStorage so it's cleared on page reloads
+              if (!window.sessionStorage.getItem('translationFingerprints')) {
+                window.sessionStorage.setItem('translationFingerprints', '{}');
+              }
+              
+              // Load from session storage
+              let processedMessages = JSON.parse(window.sessionStorage.getItem('translationFingerprints') || '{}');
+              
+              // Cleanup old entries (older than 45 seconds)
+              const cleanupTime = now - 45000;
+              Object.keys(processedMessages).forEach(key => {
+                if (processedMessages[key] < cleanupTime) {
+                  delete processedMessages[key];
+                }
+              });
+              
+              // Save back to session storage
+              window.sessionStorage.setItem('translationFingerprints', JSON.stringify(processedMessages));
               
               // Debug note: this processes translations, not just speech inputs
               console.log(`[WebSpeech] Checking translation fingerprint: "${messageFingerprint.substring(0, 30)}..." against ${Object.keys(processedMessages).length} existing fingerprints`);
@@ -564,7 +581,29 @@ export function SpeechInput({
               
               // Mark this as processed with current timestamp
               processedMessages[messageFingerprint] = now;
+              window.sessionStorage.setItem('translationFingerprints', JSON.stringify(processedMessages));
               console.log(`[WebSpeech] Processing translation in listen mode: "${trimmedText.substring(0, 30)}..." -> "${trimmedTranslation.substring(0, 30)}..."`);
+              
+              // Reset WebSpeech recognition state to prevent picking up the translated audio
+              // This helps stop the microphone from capturing its own output
+              const isListenPage = window.location.pathname.includes('/listen');
+              if (isListenPage) {
+                setTimeout(() => {
+                  if (isListening && !useOpenAI) {
+                    console.log("[WebSpeech] Clearing recognition buffer after translation processed...");
+                    resetWebSpeechTranscript();
+                    
+                    // Extra cleanup to wipe any pending processing
+                    if (window.__openAIRawTranscription) {
+                      window.__openAIRawTranscription.sourceText = '';
+                      window.__openAIRawTranscription.translatedText = '';
+                    }
+                    
+                    // No need to directly manipulate the recognition object here
+                    // The existing resetWebSpeechTranscript already handles the reset
+                  }
+                }, 500); // Do this after translation is spoken to clear recognition state
+              }
             }
             
             // IMPORTANT: For WebSpeech, make sure we're sending the original transcript text
@@ -671,8 +710,25 @@ export function SpeechInput({
         const deduplicationWindow = 30000; // 30 seconds instead of 60
         const now = Date.now();
         
-        // Global persistent storage for similar message tracking across component lifecycle
-        const processedFingerprints = (window as any).__listenModeFingerprints = (window as any).__listenModeFingerprints || {};
+        // Local session-based fingerprint storage that's cleared on page reloads
+        // Not using global window storage to prevent cross-user persistence
+        if (!window.sessionStorage.getItem('speechFingerprints')) {
+          window.sessionStorage.setItem('speechFingerprints', '{}');
+        }
+        
+        // Load from session storage - this way it's not persisted across browser sessions
+        let processedFingerprints = JSON.parse(window.sessionStorage.getItem('speechFingerprints') || '{}');
+        
+        // Clean up old fingerprints (older than 60 seconds)
+        const cleanupTime = now - 60000;
+        Object.keys(processedFingerprints).forEach(key => {
+          if (processedFingerprints[key] < cleanupTime) {
+            delete processedFingerprints[key];
+          }
+        });
+        
+        // Store back to session storage after cleanup
+        window.sessionStorage.setItem('speechFingerprints', JSON.stringify(processedFingerprints));
         
         // Check if we've processed this exact fingerprint recently
         // For debugging purposes - log all fingerprints
@@ -759,7 +815,24 @@ export function SpeechInput({
         
         // Mark this fingerprint as processed with current timestamp
         processedFingerprints[messageFingerprint] = now;
+        window.sessionStorage.setItem('speechFingerprints', JSON.stringify(processedFingerprints));
         console.log(`[WebSpeech] Processing new transcript in listen mode: ${trimmedText.substring(0, 30)}...`);
+        
+        // In listen mode, it's important to clear the recognition after sending
+        // to prevent picking up the translation audio and creating feedback loops
+        if (isListenPage) {
+          // Schedule a restart of recognition to clear buffer after sending
+          // This helps prevent feedback loops where the system hears its own output
+          setTimeout(() => {
+            if (isListening) {
+              console.log("[WebSpeech] Clearing recognition buffer to prevent audio feedback...");
+              resetWebSpeechTranscript();
+              
+              // No need for direct recognition manipulation
+              // The resetWebSpeechTranscript function already handles this
+            }
+          }, 300);
+        }
       }
       
       // Store the source text in the window to mimic OpenAI format
