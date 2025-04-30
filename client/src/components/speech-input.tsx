@@ -26,6 +26,10 @@ declare global {
       lastToggleTime: number;
       preventLanguageEffectTrigger: boolean;
     };
+    __tempFingerprints?: Record<string, number>;
+    __tempTranslationFingerprints?: Record<string, number>;
+    __lastSpeechStopTime?: number;
+    __lastUserInteractionTime?: number;
   }
 }
 
@@ -506,29 +510,36 @@ export function SpeechInput({
                 messageFingerprint = `${trimmedText}|${trimmedTranslation.substring(0, 15)}`;
               }
               
-              // Use a moderate deduplication window to prevent repetition (30 seconds)
-              const deduplicationWindow = 30000; // 30 seconds is a good balance
+              // Use a very short deduplication window to only catch immediate duplicates
+              const deduplicationWindow = 3000; // Just 3 seconds for translations - just enough to prevent duplicates
               const now = Date.now();
               
-              // Local session-based storage for processed translation messages
-              // Using sessionStorage so it's cleared on page reloads
-              if (!window.sessionStorage.getItem('translationFingerprints')) {
-                window.sessionStorage.setItem('translationFingerprints', '{}');
+              // Use temporary in-memory storage that doesn't persist
+              if (!(window as any).__tempTranslationFingerprints) {
+                (window as any).__tempTranslationFingerprints = {};
               }
               
-              // Load from session storage
-              let processedMessages = JSON.parse(window.sessionStorage.getItem('translationFingerprints') || '{}');
+              // Use very ephemeral storage
+              let processedMessages = (window as any).__tempTranslationFingerprints;
               
-              // Cleanup old entries (older than 45 seconds)
-              const cleanupTime = now - 45000;
+              // Clear all fingerprints as soon as user interaction happens
+              if ((window as any).__lastUserInteractionTime) {
+                const timeSinceUserInteraction = now - (window as any).__lastUserInteractionTime;
+                
+                // If user interacted more than 2 seconds ago, clear all fingerprints
+                if (timeSinceUserInteraction > 2000) {
+                  processedMessages = (window as any).__tempTranslationFingerprints = {};
+                  console.log("[WebSpeech] Cleared all translation fingerprints due to user interaction");
+                }
+              }
+              
+              // Very aggressively clean up old entries (older than just 3 seconds)
+              const cleanupTime = now - 3000;
               Object.keys(processedMessages).forEach(key => {
                 if (processedMessages[key] < cleanupTime) {
                   delete processedMessages[key];
                 }
               });
-              
-              // Save back to session storage
-              window.sessionStorage.setItem('translationFingerprints', JSON.stringify(processedMessages));
               
               // Debug note: this processes translations, not just speech inputs
               console.log(`[WebSpeech] Checking translation fingerprint: "${messageFingerprint.substring(0, 30)}..." against ${Object.keys(processedMessages).length} existing fingerprints`);
@@ -581,7 +592,8 @@ export function SpeechInput({
               
               // Mark this as processed with current timestamp
               processedMessages[messageFingerprint] = now;
-              window.sessionStorage.setItem('translationFingerprints', JSON.stringify(processedMessages));
+              // No longer using sessionStorage for translation fingerprints either
+              // This makes them fully ephemeral and prevents issues across sessions
               console.log(`[WebSpeech] Processing translation in listen mode: "${trimmedText.substring(0, 30)}..." -> "${trimmedTranslation.substring(0, 30)}..."`);
               
               // Reset WebSpeech recognition state to prevent picking up the translated audio
@@ -706,29 +718,47 @@ export function SpeechInput({
           messageFingerprint = trimmedText;
         }
         
-        // Use moderate deduplication window to prevent repetition while allowing new content (30 seconds)
-        const deduplicationWindow = 30000; // 30 seconds instead of 60
+        // Use extremely short deduplication window to only catch immediate duplicates
+        // but allow normal conversation to continue
+        const deduplicationWindow = 5000; // Only 5 seconds - just enough to catch immediate duplicates
         const now = Date.now();
         
-        // Local session-based fingerprint storage that's cleared on page reloads
-        // Not using global window storage to prevent cross-user persistence
-        if (!window.sessionStorage.getItem('speechFingerprints')) {
-          window.sessionStorage.setItem('speechFingerprints', '{}');
+        // Use only temporary in-memory storage that's cleared when the component unmounts
+        // Don't store in sessionStorage to avoid persisting across page refreshes
+        if (!(window as any).__tempFingerprints) {
+          (window as any).__tempFingerprints = {};
         }
         
-        // Load from session storage - this way it's not persisted across browser sessions
-        let processedFingerprints = JSON.parse(window.sessionStorage.getItem('speechFingerprints') || '{}');
+        // Load from temporary storage - much more ephemeral 
+        let processedFingerprints = (window as any).__tempFingerprints;
         
-        // Clean up old fingerprints (older than 60 seconds)
-        const cleanupTime = now - 60000;
+        // Clear all fingerprints as soon as speech stops or restarts
+        // This ensures we don't block legitimate new speech
+        if ((window as any).__lastSpeechStopTime) {
+          const timeSinceSpeechStopped = now - (window as any).__lastSpeechStopTime;
+          
+          // If speech stopped more than 2 seconds ago, clear all fingerprints
+          if (timeSinceSpeechStopped > 2000) {
+            processedFingerprints = (window as any).__tempFingerprints = {};
+            console.log("[WebSpeech] Cleared all fingerprints due to speech break");
+          }
+        }
+        
+        // Aggressively clean up old fingerprints (older than just 5 seconds)
+        const cleanupTime = now - 5000; 
         Object.keys(processedFingerprints).forEach(key => {
           if (processedFingerprints[key] < cleanupTime) {
             delete processedFingerprints[key];
           }
         });
         
-        // Store back to session storage after cleanup
-        window.sessionStorage.setItem('speechFingerprints', JSON.stringify(processedFingerprints));
+        // Track when speech starts and stops to help with cleanup
+        if (!transcriptResult.finalText) {
+          (window as any).__lastSpeechStopTime = now;
+        }
+        
+        // No longer storing in session storage - using only in-memory storage
+        // to make fingerprints completely ephemeral
         
         // Check if we've processed this exact fingerprint recently
         // For debugging purposes - log all fingerprints
@@ -815,7 +845,7 @@ export function SpeechInput({
         
         // Mark this fingerprint as processed with current timestamp
         processedFingerprints[messageFingerprint] = now;
-        window.sessionStorage.setItem('speechFingerprints', JSON.stringify(processedFingerprints));
+        // No longer storing in session storage - completely ephemeral
         console.log(`[WebSpeech] Processing new transcript in listen mode: ${trimmedText.substring(0, 30)}...`);
         
         // In listen mode, it's important to clear the recognition after sending
