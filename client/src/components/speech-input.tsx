@@ -299,7 +299,7 @@ export function SpeechInput({
       // Global variables for the streaming system
       (window as any).__webSpeechStreamingEnabled = true;
       (window as any).__webSpeechLastStreamingChunkTime = Date.now();
-      (window as any).__webSpeechStreamingChunkInterval = 2000; // Process every 2 seconds by default
+      (window as any).__webSpeechStreamingChunkInterval = 3500; // Increased to 3.5 seconds to prevent voice lag and overlap
       (window as any).__webSpeechStreamingLastProcessedText = '';
       (window as any).__webSpeechStreamingProcessingChunk = false;
       (window as any).__webSpeechStreamingLastChunkTime = 0;
@@ -904,7 +904,7 @@ export function SpeechInput({
                 
                 // Initialize timestamps and intervals
                 window.__webSpeechLastStreamingChunkTime = Date.now();
-                window.__webSpeechStreamingChunkInterval = 2000; // Default 2 seconds between chunks
+                window.__webSpeechStreamingChunkInterval = 3500; // Default 3.5 seconds between chunks to prevent voice lag
                 window.__webSpeechStreamingLastProcessedText = "";
                 window.__webSpeechStreamingProcessingChunk = false;
                 window.__webSpeechStreamingLastChunkTime = Date.now();
