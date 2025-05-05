@@ -94,7 +94,7 @@ const Message = memo(({ message, onPlayTranslation, isSpeaking }: {
             )}>{message.targetText}</p>
             <div className="flex items-center justify-between">
               <time className="text-xs text-white/80">
-                {format(message.timestamp, "HH:mm:ss")}
+                {format(message.timestamp, "MMM d yyyy HH:mm:ss")}
               </time>
               <Button
                 variant="ghost"
@@ -236,7 +236,7 @@ export function ChatMessages({
                             )}>{message.targetText}</p>
                             <div className="flex items-center justify-between">
                               <time className="text-xs text-white/80">
-                                {format(message.timestamp, "HH:mm:ss")}
+                                {format(message.timestamp, "MMM d yyyy HH:mm:ss")}
                               </time>
                               <div className="flex items-center gap-1">
                                 <span className="text-xs text-white/80">Translation</span>
@@ -289,7 +289,7 @@ export function ChatMessages({
                         </div>
                         <div className="flex justify-between items-center mt-1">
                           <div className="text-xs text-muted-foreground">
-                            {format(message.timestamp, "HH:mm:ss")}
+                            {format(message.timestamp, "MMM d yyyy HH:mm:ss")}
                           </div>
                           {!isSource && (
                             <button

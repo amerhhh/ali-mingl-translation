@@ -729,11 +729,19 @@ export default function ChatRoom() {
                     className="p-2 md:p-3 touch-manipulation"
                     onClick={async () => {
                       try {
+                        // Clear any ongoing speech synthesis
+                        if (window.speechSynthesis) {
+                          window.speechSynthesis.cancel();
+                        }
+
+                        // Create new room
                         const response = await fetch('/api/rooms', {
                           method: 'POST'
                         });
                         const data = await response.json();
-                        setLocation(`/chat/${data.roomId}`);
+
+                        // Force a full page reload to the new room URL
+                        window.location.href = `/chat/${data.roomId}`;
                       } catch (error) {
                         console.error('Failed to create room:', error);
                         toast({
@@ -939,7 +947,7 @@ export default function ChatRoom() {
               />
 
               <ChatMessages
-                messages={messages.map((msg) => ({
+                messages={[...messages].reverse().map((msg) => ({
                   sourceText: msg.text,
                   targetText: msg.translatedText,
                   sourceLang: msg.sourceLang as LanguageCode,

@@ -50,6 +50,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { format } from "date-fns";
+import { Separator } from "@/components/ui/separator";
 
 // Declare global window properties for TypeScript
 declare global {
@@ -343,17 +345,17 @@ export default function Listen() {
           return;
         }
         
-        // Also check for duplicate messages within 5 seconds window
-        if (timeSinceLastUtterance < 5000) {
-          // Check for duplicate message content
-          const isDuplicateMessage = trimmedText.toLowerCase().includes((window as any).__lastListenHandlerText.toLowerCase()) ||
-                                    (window as any).__lastListenHandlerText.toLowerCase().includes(trimmedText.toLowerCase());
+       
+        // if (timeSinceLastUtterance < 5000) {
+      
+        //   const isDuplicateMessage = trimmedText.toLowerCase().includes((window as any).__lastListenHandlerText.toLowerCase()) ||
+        //                             (window as any).__lastListenHandlerText.toLowerCase().includes(trimmedText.toLowerCase());
                                     
-          if (isDuplicateMessage) {
-            console.log(`Duplicate message detected within 5 seconds - not sending again:`, trimmedText);
-            return;
-          }
-        }
+        //   if (isDuplicateMessage) {
+        //     console.log(`Duplicate message detected within 5 seconds - not sending again:`, trimmedText);
+        //     return;
+        //   }
+        // }
         
         // Otherwise, update our tracking and proceed
         (window as any).__lastListenHandlerTime = now;
@@ -394,6 +396,15 @@ export default function Listen() {
             
             // Store this timestamp to prevent duplicate playback
             (window as any).__lastPlayedTranscriptTimestamp = Date.now();
+            
+            // Update the current translation with the translated text
+            setCurrentTranslation({
+              sourceText: text,
+              targetText: filteredText,
+              sourceLang,
+              targetLang,
+              isPartial: false
+            });
             
             handlePlayTranslation(filteredText, targetLang, false);
           } else {
@@ -1244,24 +1255,51 @@ export default function Listen() {
                 // Fall back to creating a new room if needed
                 const createChatRoom = async () => {
                   try {
-                    const response = await apiRequest({
-                      method: "POST", 
-                      url: "/api/rooms", 
-                      data: {},
-                      on401: "throw"
-                    });
+                    // Clear any ongoing speech synthesis
+                    if (window.speechSynthesis) {
+                      window.speechSynthesis.cancel();
+                    }
+
+                    // Turn off microphone if it's active
+                    turnOffMicrophone();
+
+                    // Reset all the global window states
+                    (window as any).__openAIRawTranscription = null;
+                    (window as any).__lastListenHandlerTime = 0;
+                    (window as any).__lastListenHandlerText = '';
+                    (window as any).__listenModePlayedTranslations = {};
+                    (window as any).__lastPlayedUtterances = {};
+                    (window as any).__lastUtteranceTime = 0;
                     
-                    // Navigate to the new chat room with its own unique ID
-                    setLocation(`/chat/${response.roomId}`);
+                    // Clear current translation
+                    setCurrentTranslation(null);
+                    
+                    // Reset message queue
+                    if (messageQueue.current) {
+                      messageQueue.current.messages = [];
+                      messageQueue.current.isPlaying = false;
+                      messageQueue.current.lastPlayedTimestamp = 0;
+                      messageQueue.current.pendingPlayback = false;
+                    }
+
+                    // Create new room
+                    const response = await fetch('/api/rooms', {
+                      method: 'POST'
+                    });
+                    const data = await response.json();
+
+                    // Reset session start time for the new room
+                    sessionStartTime.current = Date.now();
+
+                    // Navigate to new room
+                    setLocation(`/listen/${data.roomId}`);
                   } catch (error) {
-                    console.error("Failed to create chat room:", error);
+                    console.error('Failed to create room:', error);
                     toast({
                       variant: "destructive",
-                      title: "Failed to create chat room",
-                      description: "Using listen room ID as fallback"
+                      title: "Error",
+                      description: "Failed to create a new room"
                     });
-                    // Fallback to old behavior if room creation fails
-                    setLocation(currentRoomId ? `/chat/${currentRoomId}` : '/chat');
                   }
                 };
                 
@@ -1327,11 +1365,22 @@ export default function Listen() {
                     className="p-2 md:p-3 touch-manipulation"
                     onClick={async () => {
                       try {
+                        // Clear any ongoing speech synthesis
+                        if (window.speechSynthesis) {
+                          window.speechSynthesis.cancel();
+                        }
+
+                        // Turn off microphone if it's active
+                        turnOffMicrophone();
+
+                        // Create new room
                         const response = await fetch('/api/rooms', {
                           method: 'POST'
                         });
                         const data = await response.json();
-                        setLocation(`/listen/${data.roomId}`);
+
+                        // Force a full page reload to the new room URL
+                        window.location.href = `/listen/${data.roomId}`;
                       } catch (error) {
                         console.error('Failed to create room:', error);
                         toast({
@@ -1529,34 +1578,38 @@ export default function Listen() {
                 
                 {messages.length > 0 ? (
                   <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                    {messages.map((msg, index) => (
-                      <div key={index} className="flex flex-col p-3 rounded-lg bg-blue-200 shadow-sm relative">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <span className="text-lg">{msg.user_emoji || '🔊'}</span>
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(msg.timestamp).toLocaleTimeString()}
-                          </span>
+                    {[...messages].reverse().map((msg, index) => (
+                      <div key={index} className={cn(
+                        "flex w-full gap-2 mb-4",
+                        msg.temp_user_uuid === userId ? "flex-row-reverse" : "flex-row"
+                      )}>
+                        <div className="flex-shrink-0 text-2xl w-8 h-8 flex items-center justify-center">
+                          {msg.user_emoji || '🔊'}
                         </div>
-                        <p className="text-foreground font-medium">{msg.translatedText}</p>
-                        <div className="absolute top-2 right-2">
-                          {/* MODIFIED: Removed play button in Listen mode */}
-                          {/* No audio playback allowed in Listen mode */}
-                          {/* 
-                            {speakerEnabled && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                className="h-6 w-6 rounded-full"
-                                onClick={() => handlePlayTranslation(
-                                  msg.translatedText, 
-                                  msg.targetLang as LanguageCode,
-                                  true
-                                )}
-                              >
-                                <Volume2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          */}
+                        <div className={cn(
+                          "max-w-[80%] rounded-2xl p-3 border shadow-sm",
+                          msg.temp_user_uuid === userId
+                            ? "bg-[#67a9d1] border-[#5590b3] text-white rounded-tr-none"
+                            : "bg-[#98c98b] border-[#7ba36f] text-white rounded-tl-none"
+                        )}>
+                          <div className="space-y-2">
+                            <p className={cn(
+                              "break-words",
+                              msg.sourceLang === 'ar' && "text-right direction-rtl text-arabic"
+                            )}>{msg.text}</p>
+                            <Separator className="my-2 bg-white/20" />
+                            <div className="space-y-2">
+                              <p className={cn(
+                                "text-sm break-words",
+                                msg.targetLang === 'ar' && "text-right direction-rtl text-lg leading-relaxed text-arabic"
+                              )}>{msg.translatedText}</p>
+                              <div className="flex items-center justify-between">
+                                <time className="text-xs text-white/80">
+                                  {format(new Date(msg.timestamp), "MMM d yyyy HH:mm:ss")}
+                                </time>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1569,26 +1622,47 @@ export default function Listen() {
                 
                 {/* Current translation in progress */}
                 {currentTranslation && (
-                  <div className="flex flex-col p-3 rounded-lg bg-blue-100 border border-blue-300 shadow-sm">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-lg">{userEmoji}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {new Date().toLocaleTimeString()}
-                      </span>
+                  <div className={cn(
+                    "flex w-full gap-2 mb-4",
+                    "flex-row-reverse"
+                  )}>
+                    <div className="flex-shrink-0 text-2xl w-8 h-8 flex items-center justify-center">
+                      {userEmoji}
                     </div>
-                    <p className="text-muted-foreground">
-                      {currentTranslation.targetText}
-                      {currentTranslation.isPartial && (
-                        <span className="inline-block animate-pulse ml-1">...</span>
-                      )}
-                    </p>
+                    <div className={cn(
+                      "max-w-[80%] rounded-2xl p-3 border shadow-sm",
+                      "bg-[#67a9d1] border-[#5590b3] text-white rounded-tr-none"
+                    )}>
+                      <div className="space-y-2">
+                        <p className={cn(
+                          "break-words",
+                          currentTranslation.sourceLang === 'ar' && "text-right direction-rtl text-arabic"
+                        )}>{currentTranslation.sourceText}</p>
+                        <Separator className="my-2 bg-white/20" />
+                        <div className="space-y-2">
+                          <p className={cn(
+                            "text-sm break-words",
+                            currentTranslation.targetLang === 'ar' && "text-right direction-rtl text-lg leading-relaxed text-arabic"
+                          )}>
+                            {currentTranslation.targetText}
+                            {currentTranslation.isPartial && (
+                              <span className="inline-block animate-pulse ml-1">...</span>
+                            )}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <time className="text-xs text-white/80">
+                              {format(new Date(), "MMM d yyyy HH:mm:ss")}
+                            </time>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
             </div>
           </div>
-          
-          {/* Debug logs section removed - only logged to console */}
+
         </div>
       </div>
     </div>
