@@ -346,16 +346,16 @@ export default function Listen() {
         }
         
        
-        // if (timeSinceLastUtterance < 5000) {
+        if (timeSinceLastUtterance < 5000) {
       
-        //   const isDuplicateMessage = trimmedText.toLowerCase().includes((window as any).__lastListenHandlerText.toLowerCase()) ||
-        //                             (window as any).__lastListenHandlerText.toLowerCase().includes(trimmedText.toLowerCase());
+          const isDuplicateMessage = trimmedText.toLowerCase().includes((window as any).__lastListenHandlerText.toLowerCase()) ||
+                                    (window as any).__lastListenHandlerText.toLowerCase().includes(trimmedText.toLowerCase());
                                     
-        //   if (isDuplicateMessage) {
-        //     console.log(`Duplicate message detected within 5 seconds - not sending again:`, trimmedText);
-        //     return;
-        //   }
-        // }
+          if (isDuplicateMessage) {
+            console.log(`Duplicate message detected within 5 seconds - not sending again:`, trimmedText);
+            return;
+          }
+        }
         
         // Otherwise, update our tracking and proceed
         (window as any).__lastListenHandlerTime = now;

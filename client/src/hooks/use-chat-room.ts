@@ -463,21 +463,20 @@ export function useChatRoom(roomId: string): ChatRoom {
     const normalizedText = text.trim().toLowerCase();
     const normalizedKey = normalizedText.substring(0, 50);
     
-    // Check for exact match or fuzzy match using normalized text
-    // if (lastSentMessage.current && 
-    //     (lastSentMessage.current.text === text || 
-    //     // Simple check if message is already processed
-    //     (lastSentMessage.current.normalizedKey && normalizedKey &&
-    //       // Check if either normalized key contains the other 
-    //       (lastSentMessage.current.normalizedKey.includes(normalizedKey) || 
-    //        normalizedKey.includes(lastSentMessage.current.normalizedKey)))) && 
-    //     // Make sure we're comparing the right target language
-    //     lastSentMessage.current.targetLang === targetLang &&
-    //     // Only check within 5 second window
-    //     now - lastSentMessage.current.timestamp < 5000) {
-    //   console.log('Duplicate message detected within 5 seconds - not sending again:', text.substring(0, 30));
-    //   return;
-    // }
+    if (lastSentMessage.current && 
+        (lastSentMessage.current.text === text || 
+        // Simple check if message is already processed
+        (lastSentMessage.current.normalizedKey && normalizedKey &&
+          // Check if either normalized key contains the other 
+          (lastSentMessage.current.normalizedKey.includes(normalizedKey) || 
+           normalizedKey.includes(lastSentMessage.current.normalizedKey)))) && 
+        // Make sure we're comparing the right target language
+        lastSentMessage.current.targetLang === targetLang &&
+        // Only check within 5 second window
+        now - lastSentMessage.current.timestamp < 5000) {
+      console.log('Duplicate message detected within 5 seconds - not sending again:', text.substring(0, 30));
+      return;
+    }
 
     // Update last sent message with normalized key for better deduplication
     lastSentMessage.current = {
