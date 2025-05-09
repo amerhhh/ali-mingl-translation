@@ -6,9 +6,10 @@ interface LanguageSelectorProps {
   onChange: (value: LanguageCode) => void;
   label?: string;
   placeholder?: string;
+  disabled?: boolean;
 }
 
-export function LanguageSelector({ value, onChange, label, placeholder = "Select language" }: LanguageSelectorProps) {
+export function LanguageSelector({ value, onChange, label, placeholder = "Select language", disabled = false }: LanguageSelectorProps) {
   const allowedLanguages: [LanguageCode, string][] = Object.entries(supportedLanguages).map(
     ([code, names]) => [code as LanguageCode, `${names.native} (${names.english})`]
   );
@@ -21,8 +22,8 @@ export function LanguageSelector({ value, onChange, label, placeholder = "Select
   return (
     <div className="flex flex-col gap-2">
       {label && <span className="text-sm font-medium text-muted-foreground">{label}</span>}
-      <Select value={value} onValueChange={(val) => onChange(val as LanguageCode)}>
-        <SelectTrigger className="w-full bg-white border-gray-200 hover:bg-gray-50 transition-colors">
+      <Select value={value} onValueChange={(val) => onChange(val as LanguageCode)} disabled={disabled}>
+        <SelectTrigger className={`w-full bg-white border-gray-200 transition-colors ${!disabled ? 'hover:bg-gray-50' : ''}`}>
           <SelectValue>
             {value ? getDisplayName(value) : placeholder}
           </SelectValue>

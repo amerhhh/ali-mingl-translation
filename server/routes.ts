@@ -497,8 +497,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const audioBuffer = Buffer.from(audio, 'base64');
       console.log(`Received audio data: ${audioBuffer.length} bytes`);
       
-      // Transcribe the audio using Whisper
-      const transcription = await transcribeAudio(audioBuffer, language);
+      // Set a reasonable timeout for real-time processing
+      const timeoutMs = 3000; // 3 seconds max for processing chunks
+      
+      // Use Promise.race to implement a timeout for real-time needs
+      const transcriptionPromise = transcribeAudio(audioBuffer, language);
+      const timeoutPromise = new Promise<string>((_, reject) => {
+        setTimeout(() => reject(new Error('Transcription timed out')), timeoutMs);
+      });
+      
+      // Race the transcription against the timeout
+      const transcription = await Promise.race([
+        transcriptionPromise,
+        timeoutPromise
+      ]);
       
       // Return the transcription
       res.json({
@@ -510,6 +522,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Whisper transcription error:', errorMessage);
       
+      // If the error was a timeout, return a more helpful message for streaming
+      const isTimeout = errorMessage === 'Transcription timed out';
+      
+      // For timeouts, we send a 200 status with empty transcription
+      // This allows the client to continue streaming without breaking
+      if (isTimeout) {
+        return res.json({
+          success: true,
+          transcription: '', // Empty transcription when timeout occurs
+          timeout: true,
+          language: req.body.language || 'auto'
+        });
+      }
+      
+      // For other errors, return a 500 status
       res.status(500).json({
         success: false,
         error: errorMessage

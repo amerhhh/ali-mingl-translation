@@ -7,7 +7,6 @@ import { Mic, StopCircle, Loader2, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import axios from "axios";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
 export default function WhisperTest() {
@@ -15,13 +14,10 @@ export default function WhisperTest() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcription, setTranscription] = useState<string>("");
   const [language, setLanguage] = useState<LanguageCode>("en");
-  const [useRealTimeMode, setUseRealTimeMode] = useState(true);
-  const [chunkDuration, setChunkDuration] = useState(2000); // 2 seconds chunks by default for fast results
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const lastProcessedTimeRef = useRef<number>(0);
   const processingChunkRef = useRef<boolean>(false);
   const timerRef = useRef<number | null>(null);
   
@@ -38,7 +34,11 @@ export default function WhisperTest() {
     // Stop and clean up media recorder
     if (mediaRecorderRef.current) {
       if (mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (err) {
+          console.error("Error stopping media recorder:", err);
+        }
       }
       
       // Release the microphone by stopping all tracks
@@ -60,11 +60,10 @@ export default function WhisperTest() {
     };
   }, [cleanupRecording]);
 
-  // Function to process an audio chunk
+  // Function to process an audio chunk with built-in retry logic
   const processAudioChunk = async (audioBlob: Blob) => {
     if (processingChunkRef.current) {
-      console.log("Already processing a chunk, skipping this one");
-      return;
+      return; // Already processing, skip
     }
 
     try {
@@ -108,27 +107,22 @@ export default function WhisperTest() {
             return prev + (needsSpace ? ' ' : '') + newTranscription;
           });
         }
-      } else {
-        console.warn("Server returned error:", response.data.error);
       }
     } catch (error) {
       console.error("Error processing audio chunk:", error);
     } finally {
       processingChunkRef.current = false;
-      lastProcessedTimeRef.current = Date.now();
     }
   };
 
-  // Function to start a timer to process audio chunks instantly
-  const startChunkProcessingTimer = useCallback(() => {
+  // Function to start a continuous streaming transcription
+  const startContinuousTranscription = useCallback(() => {
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
     }
     
-    // Process chunks based on configured chunk duration (default: 500ms)
-    // For very responsive real-time experience, we use a shorter interval than the chunk duration
-    const processingInterval = Math.min(500, chunkDuration / 2);
-    
+    // Use a very short interval (300ms) for frequent chunk processing
+    // This creates an almost continuous stream effect
     timerRef.current = window.setInterval(() => {
       if (!isRecording || audioChunksRef.current.length === 0) return;
       
@@ -140,8 +134,8 @@ export default function WhisperTest() {
       
       // Clear the chunks after processing
       audioChunksRef.current = [];
-    }, processingInterval); // Use optimized processing interval for faster transcription
-  }, [isRecording, chunkDuration]);
+    }, 300); // Very short interval for near-continuous results
+  }, [isRecording]);
 
   // Function to request microphone access and start recording
   const startRecording = useCallback(async () => {
@@ -149,63 +143,45 @@ export default function WhisperTest() {
       // Reset state
       setTranscription("");
       audioChunksRef.current = [];
-      lastProcessedTimeRef.current = 0;
       processingChunkRef.current = false;
 
-      // Request microphone access
+      // Request microphone access with optimized settings
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { 
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          sampleRate: 16000,
         } 
       });
       
       streamRef.current = stream;
       
-      // Create a new MediaRecorder with the stream
+      // Create a new MediaRecorder with the stream using optimized settings
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm',
+        audioBitsPerSecond: 128000,
       });
       mediaRecorderRef.current = mediaRecorder;
       
-      // Add event listeners
+      // Add event listeners for data availability
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
       
-      // Set up processing based on mode
-      if (useRealTimeMode) {
-        // For real-time mode, start a timer to process chunks periodically
-        startChunkProcessingTimer();
-        
-        // Configure the media recorder to deliver data very frequently (250ms)
-        mediaRecorder.start(250); // Get data every 250ms for near instant transcription
-      } else {
-        // For traditional mode, process everything when recording stops
-        mediaRecorder.onstop = async () => {
-          setIsProcessing(true);
-          // Create a blob from the recorded audio chunks
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          
-          // Process the entire recording
-          await processAudioChunk(audioBlob);
-          setIsProcessing(false);
-        };
-        
-        // Start recording without frequent data delivery
-        mediaRecorder.start();
-      }
+      // Configure the media recorder to deliver data very frequently (100ms)
+      mediaRecorder.start(100); // Get data every 100ms for near continuous results
+      
+      // Start the continuous transcription process immediately
+      startContinuousTranscription();
       
       setIsRecording(true);
       
       toast({
         title: "Recording Started",
-        description: useRealTimeMode 
-          ? "Speaking now... Transcription will appear in real-time"
-          : "Speak now... Transcription will appear when you stop",
+        description: "Speaking now... Transcription will appear in real-time",
       });
     } catch (error) {
       console.error("Error accessing microphone:", error);
@@ -215,7 +191,7 @@ export default function WhisperTest() {
         description: "Could not access your microphone. Please check permissions.",
       });
     }
-  }, [toast, useRealTimeMode, startChunkProcessingTimer]);
+  }, [toast, startContinuousTranscription]);
 
   // Function to stop recording
   const stopRecording = useCallback(() => {
@@ -229,8 +205,8 @@ export default function WhisperTest() {
         timerRef.current = null;
       }
       
-      // Process any remaining chunks for real-time mode
-      if (useRealTimeMode && audioChunksRef.current.length > 0) {
+      // Process any remaining chunks
+      if (audioChunksRef.current.length > 0) {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         processAudioChunk(audioBlob);
         audioChunksRef.current = [];
@@ -244,12 +220,10 @@ export default function WhisperTest() {
       
       toast({
         title: "Recording Stopped",
-        description: useRealTimeMode 
-          ? "Final transcription displayed"
-          : "Processing your audio...",
+        description: "Final transcription displayed",
       });
     }
-  }, [isRecording, toast, useRealTimeMode]);
+  }, [isRecording, toast]);
 
   // Reset the transcription
   const resetTranscription = useCallback(() => {
@@ -262,7 +236,7 @@ export default function WhisperTest() {
 
   return (
     <div className="container mx-auto p-4 max-w-3xl">
-      <h1 className="text-3xl font-bold mb-6 text-center">Whisper Speech-to-Text Test</h1>
+      <h1 className="text-3xl font-bold mb-6 text-center">Continuous Live Transcription</h1>
       
       <Card className="p-6 mb-6">
         <div className="flex flex-col space-y-4">
@@ -272,62 +246,12 @@ export default function WhisperTest() {
               value={language}
               onChange={setLanguage}
               placeholder="Select language"
+              disabled={isRecording}
             />
             <p className="text-sm text-muted-foreground mt-1">
               Select the language you'll be speaking in (helps improve accuracy)
             </p>
           </div>
-          
-          <Separator className="my-2" />
-          
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="real-time-mode"
-              checked={useRealTimeMode}
-              onCheckedChange={setUseRealTimeMode}
-              disabled={isRecording}
-            />
-            <Label htmlFor="real-time-mode" className="cursor-pointer">
-              Real-time transcription mode
-            </Label>
-          </div>
-          
-          {useRealTimeMode && (
-            <div className="flex flex-col space-y-2 pl-7">
-              <p className="text-sm text-muted-foreground">
-                Chunks are processed every {chunkDuration/1000} seconds for real-time results.
-              </p>
-              <div className="flex items-center gap-4">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setChunkDuration(2000)}
-                  disabled={isRecording || chunkDuration === 2000}
-                  className={chunkDuration === 2000 ? "bg-primary/10" : ""}
-                >
-                  2s
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setChunkDuration(5000)}
-                  disabled={isRecording || chunkDuration === 5000}
-                  className={chunkDuration === 5000 ? "bg-primary/10" : ""}
-                >
-                  5s
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setChunkDuration(10000)}
-                  disabled={isRecording || chunkDuration === 10000}
-                  className={chunkDuration === 10000 ? "bg-primary/10" : ""}
-                >
-                  10s
-                </Button>
-              </div>
-            </div>
-          )}
           
           <div className="flex justify-center gap-3 mt-4">
             {!isRecording ? (
@@ -338,7 +262,7 @@ export default function WhisperTest() {
                 size="lg"
               >
                 <Mic size={20} />
-                <span>Start Recording</span>
+                <span>Start Continuous Transcription</span>
               </Button>
             ) : (
               <Button 
@@ -367,8 +291,8 @@ export default function WhisperTest() {
       
       <Card className="p-6">
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-xl font-semibold">Transcription Result:</h2>
-          {isRecording && useRealTimeMode && (
+          <h2 className="text-xl font-semibold">Live Transcription:</h2>
+          {isRecording && (
             <div className="flex items-center space-x-2 text-sm text-primary animate-pulse">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Live transcribing...</span>
@@ -387,9 +311,9 @@ export default function WhisperTest() {
               <p className="whitespace-pre-wrap">{transcription}</p>
             ) : (
               <p className="text-muted-foreground text-center italic">
-                {isRecording && useRealTimeMode 
+                {isRecording 
                   ? "Start speaking to see transcription..." 
-                  : "Record audio to see transcription here"}
+                  : "Click 'Start Continuous Transcription' and begin speaking"}
               </p>
             )}
           </div>
@@ -397,14 +321,14 @@ export default function WhisperTest() {
       </Card>
       
       <div className="mt-6 text-sm text-muted-foreground">
-        <p>This test uses OpenAI's Whisper model for speech-to-text conversion.</p>
-        <p>The audio processing happens on the server - your audio is not stored permanently.</p>
+        <p>This test uses OpenAI's Whisper model for continuous speech-to-text conversion.</p>
+        <p>The audio processing happens on the server in near real-time.</p>
         <p className="font-medium mt-2">Tips for better transcription:</p>
         <ul className="list-disc list-inside ml-2">
           <li>Speak clearly and at a normal pace</li>
           <li>Use a good quality microphone</li>
           <li>Reduce background noise when possible</li>
-          <li>In real-time mode, pause briefly between sentences for best results</li>
+          <li>Pause briefly between sentences for more accurate results</li>
         </ul>
       </div>
     </div>
