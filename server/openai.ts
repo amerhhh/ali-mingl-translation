@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import axios from "axios";
 import * as dotenv from 'dotenv';
 import fs from 'fs';
+import { Readable } from 'stream';
 dotenv.config();
 
 if (!process.env.OPENAI_API_KEY) {
@@ -115,11 +116,61 @@ function getLanguageForOpenAI(langCode: string): string {
 }
 
 /**
- * Create a realtime speech session with OpenAI
- * @param {string} sourceLang - Source language code
- * @param {string} targetLang - Target language code
- * @returns {Promise<any>} - Session data with ephemeral token
+ * Transcribe audio using OpenAI's Whisper model
+ * This function will take an audio buffer and return the transcription text
+ * 
+ * @param {Buffer} audioBuffer - The audio data as a buffer
+ * @param {string} language - The language code for the audio (optional)
+ * @returns {Promise<string>} - The transcribed text
  */
+export async function transcribeAudio(audioBuffer: Buffer, language?: string): Promise<string> {
+  try {
+    console.log(`Transcribing audio, buffer size: ${audioBuffer.length} bytes, language: ${language || 'auto'}`);
+    
+    // Create a temporary file path with appropriate extension (.webm or .mp3 are well-supported)
+    const tempFilePath = `/tmp/audio-${Date.now()}.webm`;
+    
+    // Write buffer to a temporary file
+    fs.writeFileSync(tempFilePath, audioBuffer);
+    
+    // Create a typed file object that OpenAI can work with
+    const file = fs.createReadStream(tempFilePath);
+    
+    try {
+      // Use OpenAI's Whisper API to transcribe the audio
+      const transcription = await openai.audio.transcriptions.create({
+        file: file,
+        model: "whisper-1",
+        language: language, // Optional language parameter
+        response_format: "text",
+      });
+      
+      console.log(`Transcription result: "${transcription}"`);
+      return transcription.toString();
+    } finally {
+      // Ensure we clean up regardless of success or failure in the API call
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (cleanupError) {
+        console.warn('Failed to clean up temporary audio file:', cleanupError);
+      }
+    }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('Transcription error:', errorMessage);
+    
+    // Log more detailed error info if available
+    if (error instanceof Error && 'response' in error) {
+      const responseData = (error as any).response?.data;
+      if (responseData) {
+        console.error('OpenAI API error details:', JSON.stringify(responseData, null, 2));
+      }
+    }
+    
+    throw new Error(`Failed to transcribe audio: ${errorMessage}`);
+  }
+}
+
 export async function createRealtimeSpeechSession(sourceLang: string, targetLang: string): Promise<any> {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
