@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { nanoid } from "nanoid";
 import { storage } from "./storage";
 import { translations, type Translation, insertTranslationSchema } from "@shared/schema";
-import { translateText, translateUIText, createRealtimeSpeechSession } from "./openai";
+import { translateText, translateUIText, createRealtimeSpeechSession, transcribeAudio } from "./openai";
 import { ZodError } from "zod";
 import { customAlphabet } from 'nanoid';
 
@@ -475,6 +475,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const message = error instanceof Error ? error.message : 'An unknown error occurred';
       console.error('Error creating real-time session:', message);
       res.status(500).json({ message });
+    }
+  });
+  
+  // Endpoint for Whisper speech-to-text transcription
+  app.post("/api/whisper-transcribe", async (req, res) => {
+    try {
+      console.log('Whisper transcription request received');
+      // Check if we have audio data in the request
+      if (!req.body || !req.body.audio) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Missing audio data" 
+        });
+      }
+      
+      // Extract the base64 audio data and language code
+      const { audio, language } = req.body;
+      
+      // Decode base64 audio data to a buffer
+      const audioBuffer = Buffer.from(audio, 'base64');
+      console.log(`Received audio data: ${audioBuffer.length} bytes`);
+      
+      // Transcribe the audio using Whisper
+      const transcription = await transcribeAudio(audioBuffer, language);
+      
+      // Return the transcription
+      res.json({
+        success: true,
+        transcription,
+        language: language || 'auto'
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('Whisper transcription error:', errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: errorMessage
+      });
     }
   });
   

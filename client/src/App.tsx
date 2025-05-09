@@ -7,6 +7,7 @@ import Home from "@/pages/home";
 import ChatRoom from "@/pages/chat-room";
 import Listen from "@/pages/listen";
 import Help from "@/pages/help";
+import WhisperTest from "@/pages/whisper-test";
 
 function Router() {
   return (
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/listen" component={Listen} />
       <Route path="/listen/:id" component={Listen} />
       <Route path="/help" component={Help} />
+      <Route path="/whisper-test" component={WhisperTest} />
       <Route component={NotFound} />
     </Switch>
   );
