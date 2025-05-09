@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Users, Copy, ChevronDown, ChevronUp, MessageSquare, Headphones, HelpCircle, Loader2, Mic } from "lucide-react";
+import { Users, Copy, ChevronDown, ChevronUp, MessageSquare, Headphones, HelpCircle, Loader2, Mic, Wand } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { QRCode } from "@/components/qr-code";
@@ -239,23 +239,39 @@ export default function Home() {
               </form>
             </Card>
             
-            {/* Whisper Test Feature */}
+            {/* Speech Recognition Features */}
             <Card className="p-6 space-y-4 border-2 border-primary/20">
               <div className="flex items-center gap-3">
                 <Mic className="w-6 h-6 text-primary" />
-                <h2 className="text-xl font-semibold">Test New Features</h2>
+                <h2 className="text-xl font-semibold">Speech Recognition</h2>
               </div>
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Try our new speech-to-text feature powered by OpenAI's Whisper model.
-                </p>
-                <Button 
-                  onClick={() => setLocation('/whisper-test')}
-                  className="w-full bg-primary/90 hover:bg-primary"
-                >
-                  <Mic className="h-4 w-4 mr-2" />
-                  Test Whisper Speech-to-Text
-                </Button>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Try our speech-to-text feature powered by OpenAI's Whisper model.
+                  </p>
+                  <Button 
+                    onClick={() => setLocation('/whisper-test')}
+                    className="w-full bg-primary/90 hover:bg-primary"
+                  >
+                    <Mic className="h-4 w-4 mr-2" />
+                    Test Whisper Speech-to-Text
+                  </Button>
+                </div>
+                
+                <div className="pt-2 border-t space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-xs font-medium">NEW</span>
+                    {" "}Try our real-time streaming transcription with OpenAI's API.
+                  </p>
+                  <Button 
+                    onClick={() => setLocation('/realtime-transcribe')}
+                    className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700"
+                  >
+                    <Wand className="h-4 w-4 mr-2" />
+                    Real-time OpenAI Transcription
+                  </Button>
+                </div>
               </div>
             </Card>
           </div>
