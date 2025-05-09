@@ -251,3 +251,70 @@ export async function createRealtimeSpeechSession(sourceLang: string, targetLang
     throw new Error(`Failed to create realtime speech session: ${errorMessage}`);
   }
 }
+
+/**
+ * Create a real-time transcription session using OpenAI's streaming audio API
+ * This provides true streaming transcription with immediate results as you speak
+ * 
+ * @returns {Promise<any>} Session details including connection endpoint and keys
+ */
+export async function createRealtimeTranscriptionSession(): Promise<any> {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY environment variable is required");
+    }
+    
+    console.log("Creating real-time transcription session with OpenAI");
+    
+    // Request a streaming transcription session from OpenAI
+    const response = await axios.post(
+      "https://api.openai.com/v1/audio/transcriptions/streaming",
+      {
+        // The newest OpenAI model is "gpt-4o" which was released May 13, 2024
+        model: "whisper-1", // Using whisper specifically for transcription
+        language: null, // Auto-detect language
+        enable_interim_results: true, // Get results as you speak, not just at the end
+        temperature: 0, // 0 temperature for most accurate transcription
+        response_format: "json" // Get structured JSON responses
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    
+    // Validate the response
+    if (!response.data || !response.data.session_id) {
+      throw new Error("Invalid response from OpenAI API");
+    }
+    
+    console.log("Successfully created real-time transcription session", {
+      sessionId: response.data.session_id,
+      expiresAt: response.data.expires_at
+    });
+    
+    // Return the essential session information
+    return {
+      sessionId: response.data.session_id,
+      socket_url: response.data.socket_url,
+      client_secret: response.data.client_secret,
+      expires_at: response.data.expires_at
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('Failed to create real-time transcription session:', errorMessage);
+    
+    // Log more detailed error info if available
+    if (error instanceof Error && 'response' in error) {
+      const responseData = (error as any).response?.data;
+      if (responseData) {
+        console.error('OpenAI API error details:', JSON.stringify(responseData, null, 2));
+      }
+    }
+    
+    throw new Error(`Failed to create real-time transcription session: ${errorMessage}`);
+  }
+}

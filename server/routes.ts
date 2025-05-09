@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { nanoid } from "nanoid";
 import { storage } from "./storage";
 import { translations, type Translation, insertTranslationSchema } from "@shared/schema";
-import { translateText, translateUIText, createRealtimeSpeechSession, transcribeAudio } from "./openai";
+import { translateText, translateUIText, createRealtimeSpeechSession, createRealtimeTranscriptionSession, transcribeAudio } from "./openai";
 import { ZodError } from "zod";
 import { customAlphabet } from 'nanoid';
 
