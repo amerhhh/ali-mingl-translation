@@ -29,38 +29,80 @@ export default function RealtimeTranscribe() {
     try {
       setIsConnecting(true);
       
-      // 1. Create an OpenAI real-time session
+      // 1. Create a session that will connect to our server (not directly to OpenAI)
       const sessionResponse = await axios.post('/api/openai/realtime-session', {
         sourceLang,
         targetLang
       });
       
-      if (!sessionResponse.data || !sessionResponse.data.url) {
-        throw new Error("Failed to get session details");
+      if (!sessionResponse.data || !sessionResponse.data.success === false) {
+        throw new Error(sessionResponse.data.message || "Failed to get session details");
       }
       
+      // Get WebSocket URL for our server
       const sessionUrl = sessionResponse.data.url;
+      console.log("Got WebSocket URL:", sessionUrl);
       
       // 2. Get user media for audio
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       
-      // 3. Create a WebSocket connection to OpenAI
+      // 3. Create a WebSocket connection to our server
       const socket = new WebSocket(sessionUrl);
       socketRef.current = socket;
       
+      // Create a unique request ID for this recording session
+      const sessionId = `realtime-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+      
       // 4. Handle WebSocket events
       socket.onopen = () => {
-        console.log("WebSocket connection established with OpenAI");
+        console.log("WebSocket connection established with server");
+        
+        // Send initial join message with session info
+        socket.send(JSON.stringify({
+          type: 'realtime_join',
+          sessionId: sessionId,
+          sourceLang: sourceLang,
+          targetLang: targetLang
+        }));
         
         // Start recording once socket is open
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
         
-        // Send audio data when available
+        // Buffer to store audio chunks
+        let audioChunks: BlobPart[] = [];
+        
+        // Collect audio data when available
         mediaRecorder.ondataavailable = (event) => {
-          if (socket.readyState === WebSocket.OPEN && event.data.size > 0) {
-            socket.send(event.data);
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+            
+            // When we have enough data, send it as a chunk
+            if (audioChunks.length >= 1) { // Send each chunk immediately for low latency
+              const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+              audioChunks = []; // Clear the chunks
+              
+              // Convert blob to base64
+              const reader = new FileReader();
+              reader.readAsDataURL(audioBlob);
+              
+              reader.onloadend = () => {
+                const base64data = reader.result as string;
+                const base64Audio = base64data.split(',')[1]; // Remove the data URL prefix
+                
+                // Send audio data to server with metadata
+                if (socket.readyState === WebSocket.OPEN) {
+                  socket.send(JSON.stringify({
+                    type: 'whisper_stream',
+                    audio: base64Audio,
+                    language: sourceLang,
+                    requestId: `whisper-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                    targetLang: targetLang
+                  }));
+                }
+              };
+            }
           }
         };
         
@@ -71,7 +113,7 @@ export default function RealtimeTranscribe() {
         setIsConnecting(false);
         
         toast({
-          title: "Connected to OpenAI",
+          title: "Connected to Server",
           description: "Speech recognition is now active. Start speaking.",
         });
       };
@@ -80,22 +122,33 @@ export default function RealtimeTranscribe() {
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          console.log("Received message:", data);
           
           // Handle different message types
-          if (data.type === "final_transcript") {
-            setTranscript(data.text);
-          } else if (data.type === "interim_transcript") {
-            setTranscript(prev => {
-              // Only update if there's new content
-              if (data.text && data.text !== prev) {
-                return data.text;
+          if (data.type === "whisper_result") {
+            // Update transcript with the transcription result
+            if (data.transcription && data.transcription.trim()) {
+              setTranscript(data.transcription);
+              
+              // If we have a target language different from source, request translation
+              if (targetLang !== sourceLang) {
+                // Server will handle translation and send it back
+                socket.send(JSON.stringify({
+                  type: 'translate_request',
+                  text: data.transcription,
+                  sourceLang: sourceLang,
+                  targetLang: targetLang,
+                  requestId: data.requestId
+                }));
               }
-              return prev;
-            });
-          } else if (data.type === "translation") {
-            setTranslation(data.text);
-          } else if (data.type === "error") {
-            console.error("OpenAI transcription error:", data.error);
+            }
+          } else if (data.type === "translation_result") {
+            // Update translation with the result
+            if (data.translation && data.translation.trim()) {
+              setTranslation(data.translation);
+            }
+          } else if (data.type === "error" || data.type === "whisper_error") {
+            console.error("Transcription error:", data.error);
             toast({
               variant: "destructive",
               title: "Transcription Error",
@@ -112,7 +165,7 @@ export default function RealtimeTranscribe() {
         toast({
           variant: "destructive",
           title: "Connection Error",
-          description: "Failed to connect to OpenAI's transcription service",
+          description: "Failed to connect to transcription service",
         });
         stopRecording();
       };

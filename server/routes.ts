@@ -574,6 +574,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
         
+        // Handle realtime_join message for our new real-time transcription feature
+        if (data.type === 'realtime_join') {
+          console.log('Real-time session join received:', data.sessionId);
+          // Store the session info with the WebSocket connection if needed
+          (ws as any).realtimeSessionId = data.sessionId;
+          (ws as any).sourceLang = data.sourceLang;
+          (ws as any).targetLang = data.targetLang;
+          
+          // Send acknowledgment
+          ws.send(JSON.stringify({
+            type: 'realtime_joined',
+            sessionId: data.sessionId,
+            success: true
+          }));
+          return;
+        }
+        
+        // Handle translation requests from the real-time client
+        if (data.type === 'translate_request') {
+          console.log(`Translation request received: ${data.text} (${data.sourceLang} -> ${data.targetLang})`);
+          
+          try {
+            // Translate the text
+            const translation = await translateText(data.text, data.targetLang);
+            
+            // Send the translation back
+            ws.send(JSON.stringify({
+              type: 'translation_result',
+              translation: translation,
+              sourceLang: data.sourceLang,
+              targetLang: data.targetLang,
+              requestId: data.requestId
+            }));
+          } catch (translationError) {
+            console.error('Translation error:', translationError);
+            ws.send(JSON.stringify({
+              type: 'error',
+              error: translationError instanceof Error 
+                ? translationError.message 
+                : 'Translation error',
+              requestId: data.requestId
+            }));
+          }
+          
+          return;
+        }
+        
         // Handle Whisper streaming transcription messages
         if (data.type === 'whisper_stream') {
           // Extract audio data and language
