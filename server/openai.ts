@@ -137,12 +137,16 @@ export async function transcribeAudio(audioBuffer: Buffer, language?: string): P
     const file = fs.createReadStream(tempFilePath);
     
     try {
-      // Use OpenAI's Whisper API to transcribe the audio
+      // Use OpenAI's Whisper API to transcribe the audio with optimized settings
       const transcription = await openai.audio.transcriptions.create({
         file: file,
         model: "whisper-1",
         language: language, // Optional language parameter
         response_format: "text",
+        // Add prompt parameter to guide transcription context
+        prompt: "The following is a clear spoken passage:",
+        // Optimize for shorter content to improve speed
+        temperature: 0.0,  // Lower temperature for more deterministic output
       });
       
       console.log(`Transcription result: "${transcription}"`);

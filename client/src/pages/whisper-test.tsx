@@ -16,7 +16,7 @@ export default function WhisperTest() {
   const [transcription, setTranscription] = useState<string>("");
   const [language, setLanguage] = useState<LanguageCode>("en");
   const [useRealTimeMode, setUseRealTimeMode] = useState(true);
-  const [chunkDuration, setChunkDuration] = useState(5000); // 5 seconds chunks by default
+  const [chunkDuration, setChunkDuration] = useState(2000); // 2 seconds chunks by default for fast results
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -119,26 +119,28 @@ export default function WhisperTest() {
     }
   };
 
-  // Function to start a timer to process audio chunks
+  // Function to start a timer to process audio chunks instantly
   const startChunkProcessingTimer = useCallback(() => {
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
     }
     
+    // Process chunks based on configured chunk duration (default: 500ms)
+    // For very responsive real-time experience, we use a shorter interval than the chunk duration
+    const processingInterval = Math.min(500, chunkDuration / 2);
+    
     timerRef.current = window.setInterval(() => {
       if (!isRecording || audioChunksRef.current.length === 0) return;
-      
-      console.log(`Processing ${audioChunksRef.current.length} audio chunks...`);
       
       // Create a blob from the current audio chunks
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       
-      // Process the audio
+      // Process the audio without waiting
       processAudioChunk(audioBlob);
       
       // Clear the chunks after processing
       audioChunksRef.current = [];
-    }, chunkDuration); // Process chunks every X seconds
+    }, processingInterval); // Use optimized processing interval for faster transcription
   }, [isRecording, chunkDuration]);
 
   // Function to request microphone access and start recording
@@ -179,8 +181,8 @@ export default function WhisperTest() {
         // For real-time mode, start a timer to process chunks periodically
         startChunkProcessingTimer();
         
-        // Configure the media recorder to deliver data frequently
-        mediaRecorder.start(1000); // Get data every 1 second
+        // Configure the media recorder to deliver data very frequently (250ms)
+        mediaRecorder.start(250); // Get data every 250ms for near instant transcription
       } else {
         // For traditional mode, process everything when recording stops
         mediaRecorder.onstop = async () => {
