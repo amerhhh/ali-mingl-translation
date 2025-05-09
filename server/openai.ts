@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import axios from "axios";
 import * as dotenv from 'dotenv';
+import fs from 'fs';
 dotenv.config();
 
 if (!process.env.OPENAI_API_KEY) {
