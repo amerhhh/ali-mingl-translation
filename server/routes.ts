@@ -479,6 +479,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Endpoint for Whisper speech-to-text transcription
+  // WebSocket handler for live speech-to-text with streaming
+  wss.on('connection', (ws: WebSocket) => {
+    // This event handler will also process whisper transcriptions
+    ws.on('message', async (message: string) => {
+      try {
+        const data = JSON.parse(message);
+        
+        // Handle Whisper streaming transcription messages
+        if (data.type === 'whisper_stream') {
+          // Extract audio data and language
+          const { audio, language, requestId } = data;
+          
+          if (!audio) {
+            ws.send(JSON.stringify({
+              type: 'whisper_error',
+              error: 'Missing audio data',
+              requestId
+            }));
+            return;
+          }
+          
+          try {
+            // Decode base64 audio data to a buffer
+            const audioBuffer = Buffer.from(audio, 'base64');
+            console.log(`Received streaming audio data: ${audioBuffer.length} bytes`);
+            
+            // Process the audio with Whisper
+            const transcription = await transcribeAudio(audioBuffer, language);
+            
+            // Send back the transcription immediately through WebSocket
+            ws.send(JSON.stringify({
+              type: 'whisper_result',
+              transcription: transcription.trim(),
+              language: language || 'auto',
+              requestId,
+              timestamp: Date.now()
+            }));
+          } catch (transcriptionError: unknown) {
+            const errorMessage = transcriptionError instanceof Error 
+              ? transcriptionError.message 
+              : 'Unknown transcription error';
+            
+            console.error('WebSocket whisper error:', errorMessage);
+            
+            ws.send(JSON.stringify({
+              type: 'whisper_error',
+              error: errorMessage,
+              requestId
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: 'Invalid message format'
+        }));
+      }
+    });
+  });
+
+  // Keep the HTTP endpoint for compatibility, but recommend WebSocket for streaming
   app.post("/api/whisper-transcribe", async (req, res) => {
     try {
       console.log('Whisper transcription request received');

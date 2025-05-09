@@ -3,27 +3,122 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LanguageSelector } from "@/components/language-selector";
 import { supportedLanguages, type LanguageCode } from "@shared/schema";
-import { Mic, StopCircle, Loader2, RotateCcw } from "lucide-react";
+import { Mic, StopCircle, Loader2, RotateCcw, Wand2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import axios from "axios";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
 
 export default function WhisperTest() {
   const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [transcription, setTranscription] = useState<string>("");
   const [language, setLanguage] = useState<LanguageCode>("en");
+  const [liveIndicator, setLiveIndicator] = useState<string>("");
   
+  // WebSocket connection for real-time streaming
+  const wsRef = useRef<WebSocket | null>(null);
+  
+  // Media recorder for capturing audio
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const processingChunkRef = useRef<boolean>(false);
   const timerRef = useRef<number | null>(null);
+  const requestIdCounterRef = useRef<number>(0);
   
   const { toast } = useToast();
 
-  // Clean up function to stop recording and clear timers
+  // Function to connect to WebSocket for streaming
+  const connectWebSocket = useCallback(() => {
+    try {
+      setIsConnecting(true);
+      
+      // Close existing connection if any
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
+      }
+      
+      // Determine WebSocket protocol based on page protocol
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      
+      console.log(`Connecting to WebSocket at ${wsUrl}`);
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      
+      // WebSocket event handlers
+      ws.onopen = () => {
+        console.log('WebSocket connection established');
+        setIsConnecting(false);
+        toast({
+          title: "Connected to streaming server",
+          description: "Ready for real-time transcription"
+        });
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          // Handle Whisper transcription results
+          if (data.type === 'whisper_result') {
+            const { transcription, requestId } = data;
+            
+            if (transcription && transcription.trim()) {
+              // Update the transcription
+              setTranscription((prev) => {
+                // Add space between text if needed
+                const needsSpace = prev.length > 0 && 
+                  !prev.endsWith(' ') && 
+                  !prev.endsWith('.') && 
+                  !prev.endsWith('?') && 
+                  !prev.endsWith('!') && 
+                  !prev.endsWith('\n');
+                
+                return prev + (needsSpace ? ' ' : '') + transcription.trim();
+              });
+              
+              // Show typing-like animation for live indicator
+              setLiveIndicator("");
+            }
+          }
+          
+          // Handle errors
+          if (data.type === 'whisper_error') {
+            console.error('Whisper error:', data.error);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setIsConnecting(false);
+        toast({
+          variant: "destructive",
+          title: "Connection Error",
+          description: "Failed to connect to transcription server"
+        });
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket connection closed');
+        setIsConnecting(false);
+      };
+      
+      return ws;
+    } catch (error) {
+      console.error('Error setting up WebSocket:', error);
+      setIsConnecting(false);
+      toast({
+        variant: "destructive",
+        title: "Connection Error",
+        description: "Failed to connect to transcription server"
+      });
+      return null;
+    }
+  }, [toast]);
+
+  // Clean up function to stop recording and close connections
   const cleanupRecording = useCallback(() => {
     // Clear any ongoing timers
     if (timerRef.current) {
@@ -48,9 +143,17 @@ export default function WhisperTest() {
       }
     }
     
+    // Close WebSocket connection
+    if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
+      }
+      wsRef.current = null;
+    }
+    
     // Reset state
     setIsRecording(false);
-    processingChunkRef.current = false;
+    setLiveIndicator("");
   }, []);
 
   // Clean up resources when component unmounts
@@ -60,118 +163,82 @@ export default function WhisperTest() {
     };
   }, [cleanupRecording]);
 
-  // Function to process an audio chunk with continuous processing
-  const processAudioChunk = async (audioBlob: Blob) => {
-    // Use a unique ID for this processing request to handle concurrency
-    const requestId = Date.now();
+  // Setup typing indicator animation
+  useEffect(() => {
+    let dotCount = 0;
+    let typingTimer: number | null = null;
+    
+    if (isRecording) {
+      typingTimer = window.setInterval(() => {
+        dotCount = (dotCount + 1) % 4;
+        const dots = '.'.repeat(dotCount);
+        setLiveIndicator(dots);
+      }, 300);
+    }
+    
+    return () => {
+      if (typingTimer) {
+        clearInterval(typingTimer);
+      }
+    };
+  }, [isRecording]);
+
+  // Function to process audio chunks via WebSocket
+  const processAudioViaWebSocket = useCallback((audioBlob: Blob) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not open, reconnecting...');
+      connectWebSocket();
+      return;
+    }
+    
+    // Get the next request ID
+    const requestId = `whisper-${Date.now()}-${requestIdCounterRef.current++}`;
     
     // Skip if the blob is too small (likely silence)
     if (audioBlob.size < 100) {
       return;
     }
     
-    // Don't block other chunks from processing
-    // Instead of preventing concurrent requests, we'll handle them all
-    // and merge results intelligently
-    const isFirstInQueue = !processingChunkRef.current;
-    processingChunkRef.current = true;
-    
-    try {
-      console.log(`Processing chunk ${requestId}, size: ${audioBlob.size} bytes`);
+    // Convert Blob to base64 and send via WebSocket
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      const base64Data = base64.split(',')[1]; // Remove the "data:audio/webm;base64," part
       
-      // Convert Blob to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      
-      // Wait for the FileReader to finish reading the file
-      const base64Audio = await new Promise<string>((resolve) => {
-        reader.onloadend = () => {
-          // Get the base64 string by removing the data URL prefix
-          const base64 = reader.result as string;
-          const base64Data = base64.split(',')[1]; // Remove the "data:audio/webm;base64," part
-          resolve(base64Data);
-        };
-      });
-      
-      // Send the audio to the server for transcription
-      // Only wait for 2.5 seconds max to maintain real-time feel
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-      
-      try {
-        const response = await axios.post('/api/whisper-transcribe', {
-          audio: base64Audio,
-          language: language
-        }, { 
-          signal: controller.signal 
-        });
-        
-        clearTimeout(timeoutId);
-        
-        // Update the transcription state with the result
-        if (response.data.success) {
-          const newTranscription = response.data.transcription.trim();
-          
-          // Only append if there's actual text (not just whitespace or empty)
-          if (newTranscription) {
-            setTranscription((prev) => {
-              // If previous text doesn't end with punctuation or space, add a space
-              const needsSpace = prev.length > 0 && 
-                !prev.endsWith(' ') && 
-                !prev.endsWith('.') && 
-                !prev.endsWith('?') && 
-                !prev.endsWith('!') && 
-                !prev.endsWith('\n');
-                
-              return prev + (needsSpace ? ' ' : '') + newTranscription;
-            });
-            
-            console.log(`Added transcription from chunk ${requestId}: "${newTranscription}"`);
-          }
-        }
-      } catch (requestError) {
-        if (requestError.name === 'AbortError') {
-          console.log(`Request ${requestId} aborted after timeout to maintain real-time flow`);
-        } else {
-          throw requestError; // Re-throw for the outer catch
-        }
-      }
-    } catch (error) {
-      console.error(`Error processing audio chunk ${requestId}:`, error);
-    } finally {
-      // Only reset the processing flag if we're the last request in the queue
-      if (isFirstInQueue) {
-        processingChunkRef.current = false;
-      }
-    }
-  };
+      // Send to WebSocket server
+      wsRef.current?.send(JSON.stringify({
+        type: 'whisper_stream',
+        audio: base64Data,
+        language,
+        requestId
+      }));
+    };
+    reader.readAsDataURL(audioBlob);
+  }, [language, connectWebSocket]);
 
-  // Function to start a continuous streaming transcription with progressive processing
-  const startContinuousTranscription = useCallback(() => {
+  // Function to start streaming audio for real-time transcription
+  const startStreamingAudio = useCallback(() => {
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
     }
     
-    // Use an extremely short interval (100ms) for truly real-time processing
-    // This creates a continuous stream effect without needing to stop recording
+    // Use a very short interval (50ms) for truly real-time streaming
     timerRef.current = window.setInterval(() => {
       if (!isRecording || audioChunksRef.current.length === 0) return;
       
       // Create a blob from the current audio chunks
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       
-      // Make a copy of the chunks and then clear the original array immediately
-      // This allows the MediaRecorder to continue collecting new chunks while we process
-      const chunksToProcess = [...audioChunksRef.current];
+      // Clear the audio chunks immediately so new ones can be collected
       audioChunksRef.current = [];
       
-      // Process the audio in a non-blocking way
+      // Process via WebSocket without blocking the UI
       setTimeout(() => {
-        processAudioChunk(audioBlob);
+        processAudioViaWebSocket(audioBlob);
       }, 0);
       
-    }, 100); // Ultra-short interval for truly continuous results
-  }, [isRecording]);
+    }, 50); // Ultra-short interval for true streaming
+  }, [isRecording, processAudioViaWebSocket]);
 
   // Function to request microphone access and start recording
   const startRecording = useCallback(async () => {
@@ -179,8 +246,13 @@ export default function WhisperTest() {
       // Reset state
       setTranscription("");
       audioChunksRef.current = [];
-      processingChunkRef.current = false;
-
+      
+      // Connect to WebSocket first
+      const ws = connectWebSocket();
+      if (!ws) {
+        throw new Error("Failed to connect to transcription server");
+      }
+      
       // Request microphone access with optimized settings
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { 
@@ -207,27 +279,27 @@ export default function WhisperTest() {
         }
       };
       
-      // Configure the media recorder to deliver data very frequently (100ms)
-      mediaRecorder.start(100); // Get data every 100ms for near continuous results
+      // Configure the media recorder to deliver data extremely frequently
+      mediaRecorder.start(50); // Get data every 50ms for true streaming experience
       
-      // Start the continuous transcription process immediately
-      startContinuousTranscription();
+      // Start the streaming audio process immediately
+      startStreamingAudio();
       
       setIsRecording(true);
       
       toast({
-        title: "Recording Started",
-        description: "Speaking now... Transcription will appear in real-time",
+        title: "Streaming Started",
+        description: "Speak now - transcription will appear as you speak",
       });
     } catch (error) {
-      console.error("Error accessing microphone:", error);
+      console.error("Error starting streaming:", error);
       toast({
         variant: "destructive",
-        title: "Recording Error",
-        description: "Could not access your microphone. Please check permissions.",
+        title: "Streaming Error",
+        description: "Could not access your microphone or connect to server",
       });
     }
-  }, [toast, startContinuousTranscription]);
+  }, [toast, connectWebSocket, startStreamingAudio]);
 
   // Function to stop recording
   const stopRecording = useCallback(() => {
@@ -244,7 +316,7 @@ export default function WhisperTest() {
       // Process any remaining chunks
       if (audioChunksRef.current.length > 0) {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        processAudioChunk(audioBlob);
+        processAudioViaWebSocket(audioBlob);
         audioChunksRef.current = [];
       }
       
@@ -255,11 +327,11 @@ export default function WhisperTest() {
       }
       
       toast({
-        title: "Recording Stopped",
+        title: "Streaming Stopped",
         description: "Final transcription displayed",
       });
     }
-  }, [isRecording, toast]);
+  }, [isRecording, toast, processAudioViaWebSocket]);
 
   // Reset the transcription
   const resetTranscription = useCallback(() => {
@@ -272,7 +344,7 @@ export default function WhisperTest() {
 
   return (
     <div className="container mx-auto p-4 max-w-3xl">
-      <h1 className="text-3xl font-bold mb-6 text-center">Continuous Live Transcription</h1>
+      <h1 className="text-3xl font-bold mb-6 text-center">Real-Time Streaming Transcription</h1>
       
       <Card className="p-6 mb-6">
         <div className="flex flex-col space-y-4">
@@ -293,12 +365,16 @@ export default function WhisperTest() {
             {!isRecording ? (
               <Button 
                 onClick={startRecording}
-                disabled={isProcessing}
+                disabled={isConnecting}
                 className="flex items-center space-x-2 bg-primary hover:bg-primary/90 text-white"
                 size="lg"
               >
-                <Mic size={20} />
-                <span>Start Continuous Transcription</span>
+                {isConnecting ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Mic size={20} />
+                )}
+                <span>{isConnecting ? "Connecting..." : "Start Streaming Transcription"}</span>
               </Button>
             ) : (
               <Button 
@@ -316,7 +392,7 @@ export default function WhisperTest() {
               onClick={resetTranscription}
               variant="outline"
               className="flex items-center space-x-2"
-              disabled={!transcription || isProcessing}
+              disabled={!transcription || isConnecting}
             >
               <RotateCcw size={16} />
               <span>Reset</span>
@@ -330,16 +406,16 @@ export default function WhisperTest() {
           <h2 className="text-xl font-semibold">Live Transcription:</h2>
           {isRecording && (
             <div className="flex items-center space-x-2 text-sm text-primary animate-pulse">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Live transcribing...</span>
+              <Wand2 className="h-4 w-4 animate-pulse" />
+              <span>Listening{liveIndicator}</span>
             </div>
           )}
         </div>
         
-        {isProcessing ? (
+        {isConnecting ? (
           <div className="flex justify-center items-center p-8">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <span className="ml-2">Processing audio...</span>
+            <span className="ml-2">Connecting to transcription service...</span>
           </div>
         ) : (
           <div className="min-h-[200px] p-4 border border-border rounded-md">
@@ -349,7 +425,7 @@ export default function WhisperTest() {
               <p className="text-muted-foreground text-center italic">
                 {isRecording 
                   ? "Start speaking to see transcription..." 
-                  : "Click 'Start Continuous Transcription' and begin speaking"}
+                  : "Click 'Start Streaming Transcription' and begin speaking"}
               </p>
             )}
           </div>
@@ -357,14 +433,14 @@ export default function WhisperTest() {
       </Card>
       
       <div className="mt-6 text-sm text-muted-foreground">
-        <p>This test uses OpenAI's Whisper model for continuous speech-to-text conversion.</p>
-        <p>The audio processing happens on the server in near real-time.</p>
+        <p>This feature uses WebSockets and OpenAI's Whisper model for true streaming transcription.</p>
+        <p>The transcription appears in real-time as you speak - no need to pause or stop recording.</p>
         <p className="font-medium mt-2">Tips for better transcription:</p>
         <ul className="list-disc list-inside ml-2">
-          <li>Speak clearly and at a normal pace</li>
+          <li>Speak clearly at a normal pace</li>
           <li>Use a good quality microphone</li>
           <li>Reduce background noise when possible</li>
-          <li>Pause briefly between sentences for more accurate results</li>
+          <li>Start with short phrases to see immediate results</li>
         </ul>
       </div>
     </div>
