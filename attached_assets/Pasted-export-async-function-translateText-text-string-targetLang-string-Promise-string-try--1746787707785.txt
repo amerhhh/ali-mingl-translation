@@ -1,0 +1,82 @@
+export async function translateText(text: string, targetLang: string): Promise<string> {
+  try {
+    console.log(`Translating text to ${targetLang}: "${text}"`);
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional translator. Translate from English to ${targetLang}.
+          Language-specific rules:
+          - For Italian (it): Use formal 'Lei' form for instructions and polite speech
+          - For Spanish (es): Use neutral Latin American Spanish
+          - For Arabic (ar): Use Modern Standard Arabic (MSA)
+
+          Important translation rules:
+          1. Input text is in English, translate it to ${targetLang}
+          2. Keep the translation natural and idiomatic in ${targetLang}
+          3. Maintain the same tone and formality level appropriate for ${targetLang}
+          4. Keep proper names unchanged
+          5. If the text is a question, ensure it remains a question in ${targetLang}
+          6. For technical terms, use standard translations in ${targetLang}
+
+          Respond only with the translation, no explanations or additional text.`
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      temperature: 0.3, // Lower temperature for more consistent translations
+    });
+
+    const translation = response.choices[0].message.content || text;
+    console.log(`Translation result: "${translation}"`);
+    return translation;
+
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('Translation error:', errorMessage);
+    throw new Error(`Failed to translate text: ${errorMessage}`);
+  }
+}
+
+// Function to translate UI text
+export async function translateUIText(text: string, targetLang: string): Promise<string> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional UI translator. Translate from English to ${targetLang}.
+          Language-specific rules:
+          - For Italian (it): Use formal 'Lei' form for instructions, maintain technical terms in English
+          - For Spanish (es): Use neutral Latin American Spanish, keep UI consistency
+          - For Arabic (ar): Use Modern Standard Arabic (MSA), ensure RTL compatibility
+
+          Important rules:
+          1. Input text is in English, translate it to ${targetLang}
+          2. Keep any placeholders (like {name} or %s) unchanged
+          3. Preserve any HTML/JSX tags if present
+          4. Keep technical terms in English if they are standard terms
+          5. Ensure button texts and labels remain clear and concise in ${targetLang}
+          6. Maintain cultural appropriateness in ${targetLang}
+
+          Respond only with the translation, no explanations or additional text.`
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      temperature: 0.3,
+    });
+
+    return response.choices[0].message.content || text;
+  } catch (error) {
+    console.error('UI translation error:', error);
+    return text; // Fallback to original text on error
+  }
+}
