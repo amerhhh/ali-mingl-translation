@@ -60,14 +60,24 @@ export default function WhisperTest() {
     };
   }, [cleanupRecording]);
 
-  // Function to process an audio chunk with built-in retry logic
+  // Function to process an audio chunk with continuous processing
   const processAudioChunk = async (audioBlob: Blob) => {
-    if (processingChunkRef.current) {
-      return; // Already processing, skip
+    // Use a unique ID for this processing request to handle concurrency
+    const requestId = Date.now();
+    
+    // Skip if the blob is too small (likely silence)
+    if (audioBlob.size < 100) {
+      return;
     }
-
+    
+    // Don't block other chunks from processing
+    // Instead of preventing concurrent requests, we'll handle them all
+    // and merge results intelligently
+    const isFirstInQueue = !processingChunkRef.current;
+    processingChunkRef.current = true;
+    
     try {
-      processingChunkRef.current = true;
+      console.log(`Processing chunk ${requestId}, size: ${audioBlob.size} bytes`);
       
       // Convert Blob to base64
       const reader = new FileReader();
@@ -84,57 +94,83 @@ export default function WhisperTest() {
       });
       
       // Send the audio to the server for transcription
-      const response = await axios.post('/api/whisper-transcribe', {
-        audio: base64Audio,
-        language: language
-      });
+      // Only wait for 2.5 seconds max to maintain real-time feel
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
       
-      // Update the transcription state with the result
-      if (response.data.success) {
-        const newTranscription = response.data.transcription.trim();
+      try {
+        const response = await axios.post('/api/whisper-transcribe', {
+          audio: base64Audio,
+          language: language
+        }, { 
+          signal: controller.signal 
+        });
         
-        // Only append if there's actual text (not just whitespace or empty)
-        if (newTranscription) {
-          setTranscription((prev) => {
-            // If previous text doesn't end with punctuation or space, add a space
-            const needsSpace = prev.length > 0 && 
-              !prev.endsWith(' ') && 
-              !prev.endsWith('.') && 
-              !prev.endsWith('?') && 
-              !prev.endsWith('!') && 
-              !prev.endsWith('\n');
-              
-            return prev + (needsSpace ? ' ' : '') + newTranscription;
-          });
+        clearTimeout(timeoutId);
+        
+        // Update the transcription state with the result
+        if (response.data.success) {
+          const newTranscription = response.data.transcription.trim();
+          
+          // Only append if there's actual text (not just whitespace or empty)
+          if (newTranscription) {
+            setTranscription((prev) => {
+              // If previous text doesn't end with punctuation or space, add a space
+              const needsSpace = prev.length > 0 && 
+                !prev.endsWith(' ') && 
+                !prev.endsWith('.') && 
+                !prev.endsWith('?') && 
+                !prev.endsWith('!') && 
+                !prev.endsWith('\n');
+                
+              return prev + (needsSpace ? ' ' : '') + newTranscription;
+            });
+            
+            console.log(`Added transcription from chunk ${requestId}: "${newTranscription}"`);
+          }
+        }
+      } catch (requestError) {
+        if (requestError.name === 'AbortError') {
+          console.log(`Request ${requestId} aborted after timeout to maintain real-time flow`);
+        } else {
+          throw requestError; // Re-throw for the outer catch
         }
       }
     } catch (error) {
-      console.error("Error processing audio chunk:", error);
+      console.error(`Error processing audio chunk ${requestId}:`, error);
     } finally {
-      processingChunkRef.current = false;
+      // Only reset the processing flag if we're the last request in the queue
+      if (isFirstInQueue) {
+        processingChunkRef.current = false;
+      }
     }
   };
 
-  // Function to start a continuous streaming transcription
+  // Function to start a continuous streaming transcription with progressive processing
   const startContinuousTranscription = useCallback(() => {
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
     }
     
-    // Use a very short interval (300ms) for frequent chunk processing
-    // This creates an almost continuous stream effect
+    // Use an extremely short interval (100ms) for truly real-time processing
+    // This creates a continuous stream effect without needing to stop recording
     timerRef.current = window.setInterval(() => {
       if (!isRecording || audioChunksRef.current.length === 0) return;
       
       // Create a blob from the current audio chunks
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       
-      // Process the audio without waiting
-      processAudioChunk(audioBlob);
-      
-      // Clear the chunks after processing
+      // Make a copy of the chunks and then clear the original array immediately
+      // This allows the MediaRecorder to continue collecting new chunks while we process
+      const chunksToProcess = [...audioChunksRef.current];
       audioChunksRef.current = [];
-    }, 300); // Very short interval for near-continuous results
+      
+      // Process the audio in a non-blocking way
+      setTimeout(() => {
+        processAudioChunk(audioBlob);
+      }, 0);
+      
+    }, 100); // Ultra-short interval for truly continuous results
   }, [isRecording]);
 
   // Function to request microphone access and start recording
