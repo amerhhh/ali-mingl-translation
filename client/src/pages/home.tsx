@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Users, Copy, ChevronDown, ChevronUp, MessageSquare, Headphones, HelpCircle, Loader2 } from "lucide-react";
+import { Users, Copy, ChevronDown, ChevronUp, MessageSquare, Headphones, HelpCircle, Loader2, Mic } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { QRCode } from "@/components/qr-code";
@@ -29,12 +29,13 @@ export default function Home() {
     createNewRooms();
   }, []);
   
-  // Automatically navigate to chat room once roomIds are set
+  // We'll no longer automatically navigate to chat room
+  // This allows us to see the home page with test options
   useEffect(() => {
-    if (roomIds?.chatRoomId) {
-      // Automatically navigate to the chat room
-      setLocation(`/chat/${roomIds.chatRoomId}`);
-    }
+    // Only run this if we want to automatically navigate to chat (disabled for testing)
+    // if (roomIds?.chatRoomId) {
+    //   setLocation(`/chat/${roomIds.chatRoomId}`);
+    // }
   }, [roomIds, setLocation]);
 
   // Create both chat and listen room IDs at once
@@ -152,11 +153,13 @@ export default function Home() {
                 } else {
                   setLocation("/listen");
                 }
+              } else if (value === "whisper") {
+                setLocation('/whisper-test');
               } else if (value === "help") {
                 setLocation('/help');
               }
             }}>
-              <TabsList className="grid grid-cols-3 w-full">
+              <TabsList className="grid grid-cols-4 w-full">
                 <TabsTrigger value="chat">
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Chat
@@ -164,6 +167,10 @@ export default function Home() {
                 <TabsTrigger value="listen">
                   <Headphones className="h-4 w-4 mr-2" />
                   Listen
+                </TabsTrigger>
+                <TabsTrigger value="whisper">
+                  <Mic className="h-4 w-4 mr-2" />
+                  Whisper Test
                 </TabsTrigger>
                 <TabsTrigger value="help">
                   <HelpCircle className="h-4 w-4 mr-2" />
@@ -230,6 +237,26 @@ export default function Home() {
                   Join Chat
                 </Button>
               </form>
+            </Card>
+            
+            {/* Whisper Test Feature */}
+            <Card className="p-6 space-y-4 border-2 border-primary/20">
+              <div className="flex items-center gap-3">
+                <Mic className="w-6 h-6 text-primary" />
+                <h2 className="text-xl font-semibold">Test New Features</h2>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Try our new speech-to-text feature powered by OpenAI's Whisper model.
+                </p>
+                <Button 
+                  onClick={() => setLocation('/whisper-test')}
+                  className="w-full bg-primary/90 hover:bg-primary"
+                >
+                  <Mic className="h-4 w-4 mr-2" />
+                  Test Whisper Speech-to-Text
+                </Button>
+              </div>
             </Card>
           </div>
         </div>
