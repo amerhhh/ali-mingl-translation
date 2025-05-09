@@ -276,11 +276,13 @@ export async function createRealtimeTranscriptionSession(): Promise<any> {
     // Return our local WebSocket URL and session information
     // This will connect to our own WebSocket server which will process the audio
     // in chunks and return transcriptions
-    const protocol = process.env.NODE_ENV === 'production' ? 'wss' : 'ws';
-    const host = process.env.HOST || 'localhost:5000';
     
-    // Create a WebSocket URL that points to our server's WebSocket endpoint
-    const wsUrl = `${protocol}://${host}/ws`;
+    // Use window.location-based WebSocket URL that will work in the browser
+    // Since we don't have access to window.location on the server,
+    // we'll return a relative WebSocket URL that the client can use
+    
+    // The client will construct the full WebSocket URL using window.location
+    const wsUrl = "ws";
     
     console.log("Created session with WebSocket URL:", wsUrl);
     

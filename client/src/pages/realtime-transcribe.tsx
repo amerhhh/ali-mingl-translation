@@ -39,20 +39,26 @@ export default function RealtimeTranscribe() {
         throw new Error(sessionResponse.data.message || "Failed to get session details");
       }
       
-      // Get WebSocket URL for our server
-      const sessionUrl = sessionResponse.data.url;
-      console.log("Got WebSocket URL:", sessionUrl);
+      // Get session ID - we'll use this to identify this streaming session
+      const serverSessionId = sessionResponse.data.sessionId;
+      console.log("Got server session ID:", serverSessionId);
       
       // 2. Get user media for audio
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       
-      // 3. Create a WebSocket connection to our server
-      const socket = new WebSocket(sessionUrl);
+      // 3. Create a WebSocket connection to our server with the correct URL
+      // Construct proper WebSocket URL based on current location
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host; // Includes hostname and port if any
+      const wsUrl = `${protocol}//${host}/ws`;
+      console.log("Connecting to WebSocket at:", wsUrl);
+      
+      const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
       
-      // Create a unique request ID for this recording session
-      const sessionId = `realtime-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+      // Create a unique client session ID for this recording session
+      const clientSessionId = `realtime-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
       
       // 4. Handle WebSocket events
       socket.onopen = () => {
@@ -61,7 +67,8 @@ export default function RealtimeTranscribe() {
         // Send initial join message with session info
         socket.send(JSON.stringify({
           type: 'realtime_join',
-          sessionId: sessionId,
+          sessionId: serverSessionId,
+          clientSessionId: clientSessionId,
           sourceLang: sourceLang,
           targetLang: targetLang
         }));
