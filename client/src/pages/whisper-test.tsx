@@ -32,8 +32,12 @@ export default function WhisperTest() {
       setIsConnecting(true);
       
       // Close existing connection if any
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.close();
+      if (wsRef.current) {
+        if (wsRef.current.readyState === WebSocket.OPEN || 
+            wsRef.current.readyState === WebSocket.CONNECTING) {
+          wsRef.current.close();
+        }
+        wsRef.current = null;
       }
       
       // Determine WebSocket protocol based on page protocol
@@ -41,29 +45,53 @@ export default function WhisperTest() {
       const wsUrl = `${protocol}//${window.location.host}/ws`;
       
       console.log(`Connecting to WebSocket at ${wsUrl}`);
+      
+      // Create a new WebSocket connection
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       
       // WebSocket event handlers
       ws.onopen = () => {
-        console.log('WebSocket connection established');
+        console.log('🟢 WebSocket connection established');
         setIsConnecting(false);
+        
+        // Send an initial message to verify connection
+        try {
+          ws.send(JSON.stringify({
+            type: 'ping',
+            timestamp: Date.now()
+          }));
+          console.log('Sent initial ping to confirm connection');
+        } catch (sendError) {
+          console.error('Error sending initial ping:', sendError);
+        }
+        
         toast({
-          title: "Connected to streaming server",
-          description: "Ready for real-time transcription"
+          title: "Connected to speech service",
+          description: "Speech recognition is now active"
         });
       };
       
       ws.onmessage = (event) => {
         try {
+          console.log(`📥 Received WebSocket message: ${event.data.substring(0, 100)}...`);
           const data = JSON.parse(event.data);
           
-          // Handle Whisper transcription results
+          // Handle different message types
           if (data.type === 'whisper_result') {
-            const { transcription, requestId } = data;
+            const { transcription, requestId, timestamp, timeout } = data;
             
+            // Skip timeout/empty responses
+            if (timeout || data.empty) {
+              console.log(`Received ${timeout ? 'timeout' : 'empty'} response for requestId: ${requestId}`);
+              return;
+            }
+            
+            // Only process if there's actual content
             if (transcription && transcription.trim()) {
-              // Update the transcription
+              console.log(`✅ Got transcription: "${transcription.trim()}"`);
+              
+              // Update the transcription state
               setTranscription((prev) => {
                 // Add space between text if needed
                 const needsSpace = prev.length > 0 && 
@@ -75,15 +103,18 @@ export default function WhisperTest() {
                 
                 return prev + (needsSpace ? ' ' : '') + transcription.trim();
               });
-              
-              // Show typing-like animation for live indicator
-              setLiveIndicator("");
             }
-          }
-          
-          // Handle errors
-          if (data.type === 'whisper_error') {
-            console.error('Whisper error:', data.error);
+          } else if (data.type === 'whisper_error') {
+            console.error('❌ Whisper error:', data.error);
+            toast({
+              variant: "destructive",
+              title: "Transcription Error",
+              description: data.error || "Error processing audio"
+            });
+          } else if (data.type === 'pong') {
+            console.log('Received pong response from server');
+          } else {
+            console.log(`Received other message type: ${data.type}`);
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -91,18 +122,26 @@ export default function WhisperTest() {
       };
       
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('❌ WebSocket error:', error);
         setIsConnecting(false);
         toast({
           variant: "destructive",
           title: "Connection Error",
-          description: "Failed to connect to transcription server"
+          description: "Failed to connect to speech service"
         });
       };
       
-      ws.onclose = () => {
-        console.log('WebSocket connection closed');
+      ws.onclose = (event) => {
+        console.log(`🔴 WebSocket connection closed: ${event.code} ${event.reason}`);
         setIsConnecting(false);
+        
+        // Auto-reconnect if we were recording
+        if (isRecording) {
+          console.log('Attempting to reconnect WebSocket...');
+          setTimeout(() => {
+            connectWebSocket();
+          }, 1000);
+        }
       };
       
       return ws;
@@ -112,11 +151,11 @@ export default function WhisperTest() {
       toast({
         variant: "destructive",
         title: "Connection Error",
-        description: "Failed to connect to transcription server"
+        description: "Failed to connect to speech service"
       });
       return null;
     }
-  }, [toast]);
+  }, [toast, isRecording]);
 
   // Clean up function to stop recording and close connections
   const cleanupRecording = useCallback(() => {
@@ -185,34 +224,69 @@ export default function WhisperTest() {
 
   // Function to process audio chunks via WebSocket
   const processAudioViaWebSocket = useCallback((audioBlob: Blob) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('WebSocket not open, reconnecting...');
-      connectWebSocket();
-      return;
-    }
-    
-    // Get the next request ID
-    const requestId = `whisper-${Date.now()}-${requestIdCounterRef.current++}`;
-    
     // Skip if the blob is too small (likely silence)
     if (audioBlob.size < 100) {
       return;
     }
     
-    // Convert Blob to base64 and send via WebSocket
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      const base64Data = base64.split(',')[1]; // Remove the "data:audio/webm;base64," part
+    // Check if WebSocket is connected
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('🔄 WebSocket not open, reconnecting...');
       
-      // Send to WebSocket server
-      wsRef.current?.send(JSON.stringify({
-        type: 'whisper_stream',
-        audio: base64Data,
-        language,
-        requestId
-      }));
+      // Attempt to reconnect
+      connectWebSocket();
+      
+      // Buffer the audio to try again if we reconnect
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          processAudioViaWebSocket(audioBlob);
+        } else {
+          console.error('Failed to reconnect WebSocket, audio chunk lost');
+        }
+      }, 500);
+      
+      return;
+    }
+    
+    // Generate a unique request ID for this chunk
+    const requestId = `whisper-${Date.now()}-${requestIdCounterRef.current++}`;
+    
+    // Convert Blob to base64 
+    const reader = new FileReader();
+    
+    // Set up processing when file read completes
+    reader.onloadend = () => {
+      try {
+        // Get the result as a string
+        const base64 = reader.result as string;
+        
+        // Extract just the base64 data (remove the data URL prefix)
+        const base64Data = base64.split(',')[1]; 
+        
+        if (!base64Data) {
+          console.error('Failed to extract base64 data from audio blob');
+          return;
+        }
+        
+        // Log the request we're about to send
+        console.log(`📤 Sending audio chunk: size=${audioBlob.size}b, requestId=${requestId}`);
+        
+        // Prepare the message
+        const message = JSON.stringify({
+          type: 'whisper_stream',
+          audio: base64Data,
+          language,
+          requestId
+        });
+        
+        // Send to WebSocket server
+        wsRef.current?.send(message);
+      } catch (error) {
+        console.error('Error processing audio data:', error);
+      }
     };
+    
+    // Start reading the audio blob as a data URL
     reader.readAsDataURL(audioBlob);
   }, [language, connectWebSocket]);
 
@@ -344,7 +418,7 @@ export default function WhisperTest() {
 
   return (
     <div className="container mx-auto p-4 max-w-3xl">
-      <h1 className="text-3xl font-bold mb-6 text-center">Real-Time Streaming Transcription</h1>
+      <h1 className="text-3xl font-bold mb-6 text-center">Automatic Speech Transcription</h1>
       
       <Card className="p-6 mb-6">
         <div className="flex flex-col space-y-4">
@@ -362,31 +436,23 @@ export default function WhisperTest() {
           </div>
           
           <div className="flex justify-center gap-3 mt-4">
-            {!isRecording ? (
-              <Button 
-                onClick={startRecording}
-                disabled={isConnecting}
-                className="flex items-center space-x-2 bg-primary hover:bg-primary/90 text-white"
-                size="lg"
-              >
-                {isConnecting ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <Mic size={20} />
-                )}
-                <span>{isConnecting ? "Connecting..." : "Start Streaming Transcription"}</span>
-              </Button>
-            ) : (
-              <Button 
-                onClick={stopRecording}
-                variant="destructive"
-                className="flex items-center space-x-2"
-                size="lg"
-              >
+            <Button 
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isConnecting}
+              className={`flex items-center space-x-2 ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'} text-white`}
+              size="lg"
+            >
+              {isConnecting ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : isRecording ? (
                 <StopCircle size={20} />
-                <span>Stop Recording</span>
-              </Button>
-            )}
+              ) : (
+                <Mic size={20} />
+              )}
+              <span>
+                {isConnecting ? "Connecting..." : isRecording ? "Stop Transcription" : "Start Automatic Transcription"}
+              </span>
+            </Button>
             
             <Button 
               onClick={resetTranscription}
@@ -405,9 +471,17 @@ export default function WhisperTest() {
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-xl font-semibold">Live Transcription:</h2>
           {isRecording && (
-            <div className="flex items-center space-x-2 text-sm text-primary animate-pulse">
-              <Wand2 className="h-4 w-4 animate-pulse" />
-              <span>Listening{liveIndicator}</span>
+            <div className="flex items-center gap-2 text-sm text-primary">
+              <div className="relative flex h-3 w-16">
+                <div className="flex-1 flex justify-evenly items-center">
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse"></div>
+                  <div className="w-1 h-2 bg-primary rounded-full animate-pulse [animation-delay:0.2s]"></div>
+                  <div className="w-1 h-3 bg-primary rounded-full animate-pulse [animation-delay:0.4s]"></div>
+                  <div className="w-1 h-2 bg-primary rounded-full animate-pulse [animation-delay:0.5s]"></div>
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse [animation-delay:0.6s]"></div>
+                </div>
+              </div>
+              <span>Live transcribing</span>
             </div>
           )}
         </div>
@@ -415,7 +489,7 @@ export default function WhisperTest() {
         {isConnecting ? (
           <div className="flex justify-center items-center p-8">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <span className="ml-2">Connecting to transcription service...</span>
+            <span className="ml-2">Initializing speech recognition service...</span>
           </div>
         ) : (
           <div className="min-h-[200px] p-4 border border-border rounded-md">
@@ -424,8 +498,8 @@ export default function WhisperTest() {
             ) : (
               <p className="text-muted-foreground text-center italic">
                 {isRecording 
-                  ? "Start speaking to see transcription..." 
-                  : "Click 'Start Streaming Transcription' and begin speaking"}
+                  ? "Speech will be transcribed automatically as you speak..." 
+                  : "Click 'Start Automatic Transcription' and just start speaking"}
               </p>
             )}
           </div>
@@ -433,14 +507,14 @@ export default function WhisperTest() {
       </Card>
       
       <div className="mt-6 text-sm text-muted-foreground">
-        <p>This feature uses WebSockets and OpenAI's Whisper model for true streaming transcription.</p>
-        <p>The transcription appears in real-time as you speak - no need to pause or stop recording.</p>
+        <p>This feature uses WebSockets and OpenAI's Whisper model for continuous transcription.</p>
+        <p>Just click start and speak - transcription happens automatically with no extra clicks needed.</p>
         <p className="font-medium mt-2">Tips for better transcription:</p>
         <ul className="list-disc list-inside ml-2">
           <li>Speak clearly at a normal pace</li>
           <li>Use a good quality microphone</li>
           <li>Reduce background noise when possible</li>
-          <li>Start with short phrases to see immediate results</li>
+          <li>No need to pause or click any buttons - just speak naturally</li>
         </ul>
       </div>
     </div>

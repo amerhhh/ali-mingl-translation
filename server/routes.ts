@@ -481,10 +481,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Endpoint for Whisper speech-to-text transcription
   // WebSocket handler for live speech-to-text with streaming
   wss.on('connection', (ws: WebSocket) => {
+    console.log('New WebSocket client connected for speech-to-text streaming');
+    
     // This event handler will also process whisper transcriptions
-    ws.on('message', async (message: string) => {
+    ws.on('message', async (message: WebSocket.Data) => {
       try {
-        const data = JSON.parse(message);
+        // Convert the message to string if it's a Buffer
+        const messageStr = message instanceof Buffer 
+          ? message.toString() 
+          : typeof message === 'string' 
+            ? message 
+            : JSON.stringify(message);
+        
+        // Parse the JSON message
+        const data = JSON.parse(messageStr);
+        
+        // Debug log the message type and essential info
+        console.log(`WS message received: type=${data.type}, requestId=${data.requestId || 'none'}`);
+        
+        // Handle ping message (for connection testing)
+        if (data.type === 'ping') {
+          console.log('Ping received from client, sending pong');
+          ws.send(JSON.stringify({
+            type: 'pong',
+            timestamp: Date.now(),
+            received: data.timestamp
+          }));
+          return;
+        }
         
         // Handle Whisper streaming transcription messages
         if (data.type === 'whisper_stream') {
@@ -492,6 +516,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const { audio, language, requestId } = data;
           
           if (!audio) {
+            console.warn('Missing audio data in whisper_stream message');
             ws.send(JSON.stringify({
               type: 'whisper_error',
               error: 'Missing audio data',
@@ -503,26 +528,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             // Decode base64 audio data to a buffer
             const audioBuffer = Buffer.from(audio, 'base64');
-            console.log(`Received streaming audio data: ${audioBuffer.length} bytes`);
+            console.log(`Processing streaming audio chunk: ${audioBuffer.length} bytes, requestId=${requestId}, lang=${language || 'auto'}`);
             
-            // Process the audio with Whisper
-            const transcription = await transcribeAudio(audioBuffer, language);
+            // Process the audio with Whisper - with shorter timeout for streaming
+            const timeoutMs = 2500; // 2.5 seconds max for streaming chunks
             
-            // Send back the transcription immediately through WebSocket
-            ws.send(JSON.stringify({
-              type: 'whisper_result',
-              transcription: transcription.trim(),
-              language: language || 'auto',
-              requestId,
-              timestamp: Date.now()
-            }));
+            // Use Promise.race to implement a timeout for real-time needs
+            const transcriptionPromise = transcribeAudio(audioBuffer, language);
+            const timeoutPromise = new Promise<string>((_, reject) => {
+              setTimeout(() => reject(new Error('Transcription timed out')), timeoutMs);
+            });
+            
+            // Race the transcription against the timeout
+            let transcription;
+            try {
+              transcription = await Promise.race([
+                transcriptionPromise,
+                timeoutPromise
+              ]);
+            } catch (timeoutError) {
+              console.log(`Transcription timed out for requestId=${requestId}, continuing with streaming`);
+              // Send an empty result on timeout to keep the stream going
+              ws.send(JSON.stringify({
+                type: 'whisper_result',
+                transcription: '',
+                language: language || 'auto',
+                requestId,
+                timestamp: Date.now(),
+                timeout: true
+              }));
+              return;
+            }
+            
+            // If we got an actual transcription, send it back
+            if (transcription && transcription.trim()) {
+              console.log(`Streaming transcription result: "${transcription.trim()}" for requestId=${requestId}`);
+              
+              // Send back the transcription immediately through WebSocket
+              ws.send(JSON.stringify({
+                type: 'whisper_result',
+                transcription: transcription.trim(),
+                language: language || 'auto',
+                requestId,
+                timestamp: Date.now()
+              }));
+            } else {
+              console.log(`Empty transcription for requestId=${requestId}, likely silence`);
+              // Send an empty result to keep the client informed
+              ws.send(JSON.stringify({
+                type: 'whisper_result',
+                transcription: '',
+                language: language || 'auto',
+                requestId,
+                timestamp: Date.now(),
+                empty: true
+              }));
+            }
           } catch (transcriptionError: unknown) {
             const errorMessage = transcriptionError instanceof Error 
               ? transcriptionError.message 
               : 'Unknown transcription error';
             
-            console.error('WebSocket whisper error:', errorMessage);
+            console.error(`WebSocket whisper error for requestId=${requestId}:`, errorMessage);
             
+            // Send error back to client
             ws.send(JSON.stringify({
               type: 'whisper_error',
               error: errorMessage,
