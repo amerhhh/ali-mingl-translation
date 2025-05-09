@@ -506,6 +506,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Endpoint for our new realtime transcribe page that communicates with OpenAI streaming API
+  app.post("/api/openai/realtime-session", async (req, res) => {
+    try {
+      const { sourceLang, targetLang } = req.body;
+      
+      if (!sourceLang || !targetLang) {
+        res.status(400).json({ 
+          success: false,
+          message: "Missing source or target language" 
+        });
+        return;
+      }
+      
+      console.log(`Creating OpenAI realtime session for languages: ${sourceLang} -> ${targetLang}`);
+      
+      // Get the session information from OpenAI
+      const session = await createRealtimeTranscriptionSession();
+      
+      // Return the WebSocket URL to the client
+      res.json({
+        success: true,
+        url: session.socket_url,
+        sessionId: session.sessionId,
+        expiresAt: session.expires_at
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      console.error('Error creating OpenAI realtime session:', message);
+      
+      res.status(500).json({ 
+        success: false,
+        message 
+      });
+    }
+  });
+  
   // Endpoint for Whisper speech-to-text transcription
   // WebSocket handler for live speech-to-text with streaming
   wss.on('connection', (ws: WebSocket) => {
